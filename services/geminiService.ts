@@ -2,22 +2,18 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
-/**
- * Extracts multiple-choice questions from text using Gemini API.
- */
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  // Use process.env.API_KEY directly as required by guidelines
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const response = await ai.models.generateContent({
-    // gemini-3-pro-preview is recommended for complex reasoning and data extraction tasks
-    model: "gemini-3-pro-preview",
-    contents: `Hãy trích xuất các câu hỏi trắc nghiệm tiếng Anh từ văn bản sau. 
-    Văn bản có thể chứa nhiều câu hỏi. Với mỗi câu hỏi, hãy xác định nội dung câu hỏi (prompt), 4 lựa chọn (A, B, C, D) và chỉ số của đáp án đúng (0-3).
-    Đồng thời, hãy đề xuất một tiêu đề phù hợp cho đề thi này dựa trên nội dung.
-    Trả về định dạng JSON chuẩn.
+    model: "gemini-3-flash-preview",
+    contents: `Bạn là một chuyên gia khảo thí tiếng Anh. Hãy bóc tách các câu hỏi trắc nghiệm từ văn bản sau.
+    Yêu cầu:
+    1. Xác định tiêu đề đề thi.
+    2. Với mỗi câu hỏi: trích xuất nội dung (prompt), 4 lựa chọn (options) và vị trí đáp án đúng (correctAnswerIndex từ 0 đến 3).
+    3. Trả về định dạng JSON chuẩn.
     
-    NỘI DUNG VĂN BẢN:
+    VĂN BẢN CẦN XỬ LÝ:
     ${text}`,
     config: {
       responseMimeType: "application/json",
@@ -30,7 +26,6 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING },
                 prompt: { type: Type.STRING },
                 options: {
                   type: Type.ARRAY,
@@ -40,9 +35,9 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
                 },
                 correctAnswerIndex: { type: Type.INTEGER }
               },
-              required: ["id", "prompt", "options", "correctAnswerIndex"]
-            },
-          },
+              required: ["prompt", "options", "correctAnswerIndex"]
+            }
+          }
         },
         required: ["title", "questions"]
       }
@@ -50,16 +45,15 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   });
 
   try {
-    // Accessing response.text as a property, not a method
     const result = JSON.parse(response.text || '{}');
     return {
       title: result.title || "Đề thi tiếng Anh mới",
       questions: (result.questions || []).map((q: any, idx: number) => ({
         ...q,
-        id: q.id || `q-${idx}-${Date.now()}`
+        id: `q-${idx}-${Date.now()}`
       }))
     };
   } catch (error) {
-    throw new Error("AI không thể đọc được cấu trúc đề. Hãy đảm bảo file Word có định dạng câu hỏi rõ ràng.");
+    throw new Error("AI không thể định dạng được nội dung. Vui lòng kiểm tra lại file Word.");
   }
 };

@@ -18,14 +18,14 @@ export interface Exam {
 
 export interface StudentSubmission {
   id: string;
-  examId: string;
-  studentName: string;
-  className: string;
+  exam_id: string;
+  student_name: string;
+  class_name: string;
   answers: Record<string, number>;
   score: number;
   total: number;
-  submittedAt: number;
-  timeSpent: number;
+  submitted_at: string;
+  time_spent: number;
 }
 
 export enum AppMode {

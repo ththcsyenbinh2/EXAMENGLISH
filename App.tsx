@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppMode, Exam, Question, StudentSubmission } from './types';
 import { extractQuestionsFromText } from './services/geminiService';
@@ -5,9 +6,7 @@ import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/su
 import { 
   GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
   Database, Lock, Unlock, FileText, RefreshCw, CheckCircle2, 
-  CloudLightning, Settings, ServerCrash, ClipboardList, Info, Save, XCircle, AlertCircle, Terminal,
-  // Fix: Added missing AlertTriangle icon to resolve compilation errors
-  AlertTriangle
+  CloudLightning, Settings, ServerCrash, ClipboardList, Info, Save, XCircle, AlertTriangle, Terminal
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -65,7 +64,6 @@ const App: React.FC = () => {
     setIsDbLoading(true);
     setDbError(null);
     try {
-      // Truy vấn sạch: Tuyệt đối không select(*)
       const { data: exData, error: exErr } = await supabase
         .from('exams')
         .select('id, exam_code, title, questions, is_open, created_at')
@@ -111,8 +109,9 @@ const App: React.FC = () => {
       setLoadingStep('AI đang bóc tách đề...');
       const extracted = await extractQuestionsFromText(result.value);
       
+      // FIX: Sử dụng crypto.randomUUID() để tạo ID đúng định dạng UUID
       const newExam: Exam = {
-        id: Math.random().toString(36).substring(2, 11),
+        id: crypto.randomUUID(),
         exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
         title: extracted.title,
         questions: extracted.questions,
@@ -133,7 +132,6 @@ const App: React.FC = () => {
     if (!currentExam) return;
     setIsDbLoading(true);
     try {
-      // Đảm bảo Payload 100% không chứa 'description'
       const payload = {
         id: currentExam.id,
         exam_code: currentExam.exam_code,
@@ -152,7 +150,7 @@ const App: React.FC = () => {
     } catch (error: any) {
       console.error("Insert Error:", error);
       setDbError(error.message);
-      alert("Lỗi lưu trữ: Cấu hình Database đang bị kẹt Cache.\n\nVui lòng xem hướng dẫn sửa lỗi (màu vàng) trong phần Cài đặt.");
+      alert("Lỗi lưu trữ: " + error.message);
     } finally {
       setIsDbLoading(false);
     }
@@ -181,16 +179,15 @@ const App: React.FC = () => {
 
           <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-3xl mb-8">
             <div className="flex items-center gap-3 mb-3 text-amber-600 font-black uppercase text-[10px] tracking-widest">
-               {/* Fix: Using AlertTriangle component which is now imported */}
-               <AlertTriangle size={18}/> HƯỚNG DẪN SỬA LỖI SCHEMA CACHE
+               <AlertTriangle size={18}/> HƯỚNG DẪN SỬA LỖI DATABASE
             </div>
             <p className="text-amber-900 text-sm font-medium leading-relaxed mb-4">
-              Nếu bạn thấy lỗi <b>"Could not find 'description' column"</b>, hãy làm theo các bước sau:
+              Nếu bạn thấy lỗi <b>"invalid input syntax for type uuid"</b> hoặc <b>"Could not find column"</b>, hãy làm theo các bước sau:
             </p>
             <ol className="text-amber-800 text-xs space-y-2 list-decimal ml-4 font-bold">
-              <li>Mở <b>SQL Editor</b> trong Supabase Dashboard.</li>
-              <li>Dán dòng lệnh này: <code className="bg-white/60 px-2 py-0.5 rounded font-mono">NOTIFY pgrst, 'reload schema';</code></li>
-              <li>Nhấn <b>Run</b> để làm mới bộ nhớ đệm của Database.</li>
+              <li>Đảm bảo các bảng trong Supabase sử dụng kiểu dữ liệu <b>UUID</b> cho cột <b>id</b>.</li>
+              <li>Mở <b>SQL Editor</b> trong Supabase Dashboard và chạy lệnh bên dưới nếu bị kẹt Cache:</li>
+              <code className="bg-white/60 px-2 py-0.5 rounded font-mono block mt-2 text-center">NOTIFY pgrst, 'reload schema';</code>
             </ol>
           </div>
 
@@ -255,8 +252,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             {dbError && (
               <button onClick={() => setShowSetup(true)} className="flex items-center gap-2 bg-red-50 text-red-500 px-4 py-2 rounded-xl text-xs font-black border border-red-100 hover:bg-red-100 transition-colors">
-                {/* Fix: Using AlertTriangle component which is now imported */}
-                <AlertTriangle size={14}/> LỖI SCHEMA - XEM CÁCH SỬA
+                <AlertTriangle size={14}/> LỖI DATABASE
               </button>
             )}
             <button onClick={() => setShowSetup(true)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-indigo-600 flex items-center gap-2">
@@ -400,8 +396,10 @@ const App: React.FC = () => {
                 if(!confirm("Xác nhận nộp bài thi?")) return;
                 let score = 0;
                 currentExam.questions.forEach(q => { if(studentAnswers[q.id] === q.correctAnswerIndex) score++; });
+                
+                // FIX: Sử dụng crypto.randomUUID() để tạo ID đúng định dạng UUID cho submission
                 const payload = { 
-                   id: Math.random().toString(36).substring(2, 11),
+                   id: crypto.randomUUID(),
                    exam_id: currentExam.id, student_name: studentName, class_name: className, 
                    answers: studentAnswers, score, total: currentExam.questions.length, 
                    time_spent: timer, submitted_at: new Date().toISOString() 

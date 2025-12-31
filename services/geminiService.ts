@@ -8,35 +8,23 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Phân tích văn bản đề thi sau và bóc tách thành JSON chuẩn.\n\nVĂN BẢN:\n${text}`,
+      contents: `Nội dung văn bản đề thi:\n\n${text}`,
       config: {
-        systemInstruction: `Bạn là một trợ lý số hóa đề thi chuyên nghiệp.
-        
-        NHIỆM VỤ QUAN TRỌNG: Xác định đáp án đúng (correctAnswerIndex) cho các câu hỏi trắc nghiệm (mcq).
-        
-        QUY TẮC BÓC TÁCH ĐÁP ÁN:
-        1. Tìm dấu hiệu: Chữ in đậm, gạch chân, dấu (*), hoặc phần 'Answer Key' ở cuối file.
-        2. TỰ GIẢI ĐỀ: Nếu file Word KHÔNG CÓ bất kỳ dấu hiệu nào chỉ ra đáp án đúng, bạn BẮT BUỘC phải vận dụng kiến thức tiếng Anh/kiến thức tổng hợp để TỰ GIẢI và tìm ra đáp án đúng nhất (A, B, C hoặc D).
-        3. TUYỆT ĐỐI KHÔNG mặc định chọn đáp án A (index 0). Nếu bạn mặc định chọn A cho tất cả các câu, hệ thống sẽ bị lỗi.
-        4. 'correctAnswerIndex' phải là số nguyên: 0 cho A, 1 cho B, 2 cho C, 3 cho D.
+        systemInstruction: `Bạn là một chuyên gia khảo thí tiếng Anh. 
+        NHIỆM VỤ: Chuyển văn bản thành JSON đề thi.
 
-        ĐỊNH DẠNG JSON:
-        {
-          "title": "Tiêu đề đề thi",
-          "questions": [
-            {
-              "type": "mcq",
-              "prompt": "Câu hỏi...",
-              "options": ["A...", "B...", "C...", "D..."],
-              "correctAnswerIndex": 0-3
-            },
-            {
-              "type": "essay",
-              "prompt": "Câu hỏi...",
-              "sampleAnswer": "Đáp án mẫu hoàn chỉnh"
-            }
-          ]
-        }`,
+        QUY TẮC NHẬN DIỆN ĐÁP ÁN ĐÚNG (MCQ):
+        - Hãy tìm các lựa chọn có dấu hiệu: In đậm, gạch chân, hoặc có ký hiệu (x), (*).
+        - Nếu có bảng đáp án (Answer Key) ở cuối văn bản, hãy đối chiếu để lấy correctAnswerIndex.
+        - TUYỆT ĐỐI KHÔNG mặc định chọn đáp án đầu tiên (index 0). Nếu không thấy dấu hiệu, hãy tự giải câu đố để chọn đáp án đúng nhất.
+        
+        QUY TẮC TỰ LUẬN (ESSAY):
+        - Nhận diện các câu yêu cầu viết lại câu, trả lời câu hỏi, viết đoạn văn.
+        - Cung cấp 'sampleAnswer' là đáp án chuẩn nhất.
+
+        CẤU TRÚC JSON:
+        - title: Tiêu đề đề thi.
+        - questions: Mảng các đối tượng { type: 'mcq'|'essay', prompt, options (chỉ mcq), correctAnswerIndex (chỉ mcq, 0-3), sampleAnswer (chỉ essay) }.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -49,7 +37,10 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
                 properties: {
                   type: { type: Type.STRING, enum: ['mcq', 'essay'] },
                   prompt: { type: Type.STRING },
-                  options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  options: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  },
                   correctAnswerIndex: { type: Type.INTEGER },
                   sampleAnswer: { type: Type.STRING }
                 },
@@ -72,7 +63,7 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
       }))
     };
   } catch (error: any) {
-    throw new Error(`Lỗi AI bóc tách: ${error.message}`);
+    throw new Error(`AI không thể bóc tách đề: ${error.message}`);
   }
 };
 
@@ -81,13 +72,17 @@ export const gradeEssayWithAI = async (prompt: string, studentAnswer: string, sa
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Câu: ${prompt}\nChuẩn: ${sampleAnswer}\nTrò: ${studentAnswer}`,
+      contents: `Câu hỏi: ${prompt}\nĐáp án mẫu: ${sampleAnswer}\nBài làm của học sinh: ${studentAnswer}`,
       config: {
-        systemInstruction: `Chấm điểm tiếng Anh thang 1.0. Trả về duy nhất con số (VD: 0.9).`,
+        systemInstruction: `Bạn là giáo viên chấm thi tiếng Anh. Hãy chấm điểm bài làm của học sinh (thang điểm 1).
+        - Trả về 1 nếu đúng hoàn toàn.
+        - Trả về 0.5 nếu đúng ý nhưng sai ngữ pháp nhẹ.
+        - Trả về 0 nếu sai hoặc để trống.
+        CHỈ TRẢ VỀ CON SỐ (0, 0.5, hoặc 1). KHÔNG GIẢI THÍCH THÊM.`,
       }
     });
     const score = parseFloat(response.text?.trim() || "0");
-    return isNaN(score) ? 0 : Math.min(1, Math.max(0, score));
+    return isNaN(score) ? 0 : score;
   } catch (e) {
     return 0;
   }

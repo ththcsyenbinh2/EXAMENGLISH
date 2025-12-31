@@ -2,15 +2,20 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
+/**
+ * Extracts multiple-choice questions from text using Gemini API.
+ */
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  // Khởi tạo instance ngay tại đây theo đúng hướng dẫn kỹ thuật
+  // Use process.env.API_KEY directly as required by guidelines
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    // gemini-3-pro-preview is recommended for complex reasoning and data extraction tasks
+    model: "gemini-3-pro-preview",
     contents: `Hãy trích xuất các câu hỏi trắc nghiệm tiếng Anh từ văn bản sau. 
     Văn bản có thể chứa nhiều câu hỏi. Với mỗi câu hỏi, hãy xác định nội dung câu hỏi (prompt), 4 lựa chọn (A, B, C, D) và chỉ số của đáp án đúng (0-3).
     Đồng thời, hãy đề xuất một tiêu đề phù hợp cho đề thi này dựa trên nội dung.
+    Trả về định dạng JSON chuẩn.
     
     NỘI DUNG VĂN BẢN:
     ${text}`,
@@ -45,6 +50,7 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   });
 
   try {
+    // Accessing response.text as a property, not a method
     const result = JSON.parse(response.text || '{}');
     return {
       title: result.title || "Đề thi tiếng Anh mới",

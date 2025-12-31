@@ -44,14 +44,18 @@ const App: React.FC = () => {
 
   const fetchExams = async () => {
     setIsDbLoading(true);
-    const { data: exData } = await supabase.from('exams').select('*').order('created_at', { ascending: false });
-    if (exData) setExams(exData);
-    const { data: subData } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false });
-    if (subData) setSubmissions(subData);
-    setIsDbLoading(false);
+    try {
+      const { data: exData } = await supabase.from('exams').select('*').order('created_at', { ascending: false });
+      if (exData) setExams(exData);
+      const { data: subData } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false });
+      if (subData) setSubmissions(subData);
+    } catch (e) {
+      console.error("Database connection error:", e);
+    } finally {
+      setIsDbLoading(false);
+    }
   };
 
-  // Logic thống kê theo lớp
   const classStats = useMemo(() => {
     if (!currentExam) return [];
     const examSubmissions = submissions.filter(s => (s as any).exam_id === currentExam.id);
@@ -298,7 +302,6 @@ const App: React.FC = () => {
           <ArrowLeft className="w-5 h-5" /> Quay lại Dashboard
         </button>
 
-        {/* Thẻ Tổng quan */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
           <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
             <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-4"><Users className="w-6 h-6"/></div>
@@ -320,12 +323,12 @@ const App: React.FC = () => {
             <div className="text-3xl font-black text-slate-900">
               {Math.round((examSubmissions.filter(s => (s as any).score >= (s as any).total / 2).length / (examSubmissions.length || 1)) * 100)}%
             </div>
-            <div className="text-xs font-black text-slate-400 uppercase mt-1">Tỉ lệ đạt (>=5)</div>
+            {/* Fix: Escape special character >= by wrapping it in curly braces and a string */}
+            <div className="text-xs font-black text-slate-400 uppercase mt-1">{"Tỉ lệ đạt (>=5)"}</div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          {/* Cột trái: Thống kê theo lớp */}
           <div className="lg:col-span-1 space-y-6">
             <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
               <PieChart className="w-5 h-5 text-indigo-600"/> Thống kê theo lớp
@@ -350,7 +353,6 @@ const App: React.FC = () => {
             ))}
           </div>
 
-          {/* Cột phải: Danh sách chi tiết */}
           <div className="lg:col-span-2">
             <div className="bg-white p-10 rounded-[40px] shadow-sm border border-slate-100 min-h-full">
               <div className="flex justify-between items-center mb-10">
@@ -612,7 +614,7 @@ const App: React.FC = () => {
   );
 };
 
-// Helper components that were not imported but used in logic
+// Helper components defined clearly
 const CheckCircle2 = (props: any) => (
   <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
 );

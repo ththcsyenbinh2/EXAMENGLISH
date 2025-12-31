@@ -70,7 +70,47 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
       }))
     };
   } catch (error: any) {
+    if (error.message?.includes('429')) {
+      throw new Error("Hệ thống AI đang bận do quá nhiều lượt truy cập cùng lúc. Vui lòng thử lại sau 30 giây.");
+    }
     throw new Error(`Lỗi AI bóc tách: ${error.message}`);
+  }
+};
+
+/**
+ * Hàm chấm điểm hàng loạt để tránh lỗi 429
+ */
+export const gradeAllEssaysWithAI = async (essays: { id: string, prompt: string, studentAnswer: string, sampleAnswer: string }[]): Promise<Record<string, number>> => {
+  if (essays.length === 0) return {};
+  
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const promptData = essays.map((e, i) => `CÂU ${i+1}:\nĐề: ${e.prompt}\nMẫu: ${e.sampleAnswer}\nBài làm: ${e.studentAnswer}`).join('\n\n---\n\n');
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Hãy chấm điểm các câu tự luận sau đây theo thang điểm 1.0 mỗi câu.\n\n${promptData}`,
+      config: {
+        systemInstruction: `Bạn là giáo viên chấm thi công tâm. Chấm điểm từng câu dựa trên ý tứ và ngữ pháp.
+        Trả về kết quả dưới dạng JSON là một mảng các con số tương ứng với thứ tự các câu.
+        Ví dụ: [0.8, 1.0, 0.45]`,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: { type: Type.NUMBER }
+        }
+      }
+    });
+
+    const scores = JSON.parse(response.text || '[]');
+    const result: Record<string, number> = {};
+    essays.forEach((e, i) => {
+      result[e.id] = scores[i] || 0;
+    });
+    return result;
+  } catch (error: any) {
+    console.error("Lỗi chấm điểm hàng loạt:", error);
+    return {};
   }
 };
 

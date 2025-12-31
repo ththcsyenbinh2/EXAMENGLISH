@@ -6,7 +6,7 @@ import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/su
 import { 
   GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
   Database, Settings, RefreshCw, CheckCircle2, CloudLightning, 
-  ClipboardList, Info, Save, Activity, Eye, FileText, ChevronRight
+  ClipboardList, Info, Save, Activity, Eye, FileText, ChevronRight, XCircle
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -230,45 +230,73 @@ const App: React.FC = () => {
                         <div className="border-b border-slate-100 pb-8 flex justify-between items-start">
                            <div>
                               <h2 className="text-3xl font-black text-slate-800">{selectedSubmission.student_name}</h2>
-                              <p className="text-slate-400 font-bold uppercase text-xs">Lớp: {selectedSubmission.class_name}</p>
+                              <p className="text-slate-400 font-bold uppercase text-xs">Lớp: {selectedSubmission.class_name} • Nộp lúc: {new Date(selectedSubmission.submitted_at).toLocaleTimeString('vi-VN')}</p>
                            </div>
                            <div className="bg-slate-900 text-white px-8 py-4 rounded-3xl text-center">
                               <div className="text-2xl font-black">{selectedSubmission.score}/{selectedSubmission.total}</div>
-                              <div className="text-[8px] font-black text-slate-500 uppercase">Điểm trắc nghiệm</div>
+                              <div className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">Đúng trắc nghiệm</div>
                            </div>
                         </div>
                         <div className="space-y-8">
-                           {currentExam.questions.map((q, idx) => (
-                             <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                                <p className="font-bold text-slate-800 mb-4 text-lg">Câu {idx+1}: {q.prompt}</p>
-                                {q.type === 'mcq' ? (
-                                  <div className="flex items-center gap-3">
-                                     <span className={`px-4 py-2 rounded-xl font-black ${selectedSubmission.answers[q.id] === q.correctAnswerIndex ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                        Học sinh chọn: {String.fromCharCode(65 + (selectedSubmission.answers[q.id] as number))}
+                           {currentExam.questions.map((q, idx) => {
+                             const studentAnswer = selectedSubmission.answers[q.id];
+                             const isCorrect = q.type === 'mcq' && studentAnswer === q.correctAnswerIndex;
+                             
+                             return (
+                               <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                  <div className="flex justify-between items-start mb-4">
+                                     <p className="font-black text-slate-800 text-lg leading-tight">Câu {idx+1}: {q.prompt}</p>
+                                     <span className={`shrink-0 ml-4 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${q.type === 'mcq' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'}`}>
+                                        {q.type === 'mcq' ? 'Trắc nghiệm' : 'Tự luận'}
                                      </span>
-                                     <span className="text-xs font-bold text-slate-400">Đáp án đúng: {String.fromCharCode(65 + (q.correctAnswerIndex || 0))}</span>
                                   </div>
-                                ) : (
-                                  <div className="space-y-4">
-                                     <div className="bg-white p-6 rounded-2xl border-2 border-indigo-100 font-medium text-slate-700 leading-relaxed italic">
-                                        "{selectedSubmission.answers[q.id] || '(Học sinh để trống)'}"
-                                     </div>
-                                     {q.sampleAnswer && (
-                                       <div className="bg-emerald-50 p-4 rounded-xl text-xs">
-                                          <span className="font-black text-emerald-700 uppercase block mb-1">Gợi ý đáp án:</span>
-                                          <span className="text-emerald-900">{q.sampleAnswer}</span>
+                                  
+                                  {q.type === 'mcq' ? (
+                                    <div className="space-y-3">
+                                       <div className={`p-4 rounded-2xl border-2 font-bold transition-all ${isCorrect ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                          <div className="text-[10px] uppercase tracking-widest opacity-60 mb-2 flex items-center gap-1.5">
+                                             {isCorrect ? <CheckCircle2 size={12}/> : <XCircle size={12}/>}
+                                             Học sinh đã chọn:
+                                          </div>
+                                          <div className="flex items-center gap-3">
+                                             <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm ${isCorrect ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>
+                                                {studentAnswer !== undefined ? String.fromCharCode(65 + (studentAnswer as number)) : '?'}
+                                             </span>
+                                             <span className="text-lg">{studentAnswer !== undefined ? q.options?.[studentAnswer] : '(Không chọn)'}</span>
+                                          </div>
                                        </div>
-                                     )}
-                                  </div>
-                                )}
-                             </div>
-                           ))}
+                                       <div className="flex items-center gap-2 px-2 text-xs font-bold text-slate-400">
+                                          <CheckCircle2 size={14} className="text-emerald-500"/>
+                                          <span className="opacity-80">Đáp án đúng:</span>
+                                          <span className="text-slate-600">{String.fromCharCode(65 + (q.correctAnswerIndex || 0))}. {q.options?.[q.correctAnswerIndex || 0]}</span>
+                                       </div>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-4">
+                                       <div className="bg-white p-6 rounded-2xl border-2 border-indigo-100 font-medium text-slate-700 leading-relaxed shadow-inner">
+                                          <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-3">Bài làm của học sinh:</div>
+                                          <div className="italic text-lg whitespace-pre-wrap">
+                                            {studentAnswer || '(Học sinh để trống)'}
+                                          </div>
+                                       </div>
+                                       {q.sampleAnswer && (
+                                         <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-100">
+                                            <span className="font-black text-emerald-700 uppercase text-[10px] tracking-widest block mb-2">Hướng dẫn chấm / Đáp án mẫu:</span>
+                                            <span className="text-emerald-900 text-sm leading-relaxed block">{q.sampleAnswer}</span>
+                                         </div>
+                                       )}
+                                    </div>
+                                  )}
+                               </div>
+                             );
+                           })}
                         </div>
                      </div>
                    ) : (
                      <div className="h-full flex flex-col items-center justify-center text-slate-300">
                         <Eye size={64} className="mb-6 opacity-20"/>
                         <p className="font-black text-xl">Chọn một học sinh để xem chi tiết bài làm</p>
+                        <p className="text-sm font-bold opacity-60 mt-2">Nội dung câu hỏi và đáp án sẽ hiện tại đây</p>
                      </div>
                    )}
                 </div>

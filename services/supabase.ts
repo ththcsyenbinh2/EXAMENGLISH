@@ -7,7 +7,7 @@ export const getSupabaseConfig = () => {
   let key = '';
 
   try {
-    // 1. Ưu tiên cao nhất: Lấy từ URL (Portable Setup Link)
+    // 1. Kiểm tra URL Params trước (Dành cho máy học sinh mới mở link)
     const params = new URLSearchParams(window.location.search);
     const urlParam = params.get('s_url');
     const keyParam = params.get('s_key');
@@ -15,25 +15,23 @@ export const getSupabaseConfig = () => {
     if (urlParam && keyParam) {
       url = decodeURIComponent(urlParam);
       key = decodeURIComponent(keyParam);
-      // Tự động lưu vào máy để lần sau không cần URL nữa
+      
+      // Lưu ngay vào máy để các lần tải sau không cần params nữa
       localStorage.setItem('ST_SUPABASE_URL', url);
       localStorage.setItem('ST_SUPABASE_ANON_KEY', key);
-      
-      // Xóa params trên URL cho sạch sẽ và bảo mật
-      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
     } else {
-      // 2. Thử lấy từ process.env (Dành cho bản Deploy chính thức)
-      url = (process.env as any).SUPABASE_URL || '';
-      key = (process.env as any).SUPABASE_ANON_KEY || '';
-
-      // 3. Cuối cùng mới lấy từ localStorage
+      // 2. Nếu không có ở URL, lấy từ localStorage
+      url = localStorage.getItem('ST_SUPABASE_URL') || '';
+      key = localStorage.getItem('ST_SUPABASE_ANON_KEY') || '';
+      
+      // 3. Cuối cùng mới lấy từ process.env (nếu có)
       if (!url || !key) {
-        url = localStorage.getItem('ST_SUPABASE_URL') || '';
-        key = localStorage.getItem('ST_SUPABASE_ANON_KEY') || '';
+        url = (process.env as any).SUPABASE_URL || '';
+        key = (process.env as any).SUPABASE_ANON_KEY || '';
       }
     }
   } catch (e) {
-    console.error("Lỗi khi đọc cấu hình:", e);
+    console.error("Lỗi cấu hình Supabase:", e);
   }
 
   return { url, key };
@@ -41,25 +39,31 @@ export const getSupabaseConfig = () => {
 
 export const isSupabaseConfigured = () => {
   const { url, key } = getSupabaseConfig();
-  return (
-    url.length > 0 && 
-    url.startsWith('https://') &&
-    key.length > 20
-  );
+  return url.length > 0 && key.length > 20;
 };
 
+// Khởi tạo client một cách an toàn
+let supabaseInstance: any = null;
+
+export const getSupabaseClient = () => {
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) return null;
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(url, key);
+  }
+  return supabaseInstance;
+};
+
+// Proxy để sử dụng như biến supabase thông thường nhưng an toàn hơn
 export const supabase = new Proxy({} as any, {
   get: (target, prop) => {
-    const { url, key } = getSupabaseConfig();
-    
-    if (!isSupabaseConfigured()) {
+    const client = getSupabaseClient();
+    if (!client) {
       return () => {
-        console.warn("Supabase chưa được cấu hình!");
-        return { data: null, error: { message: 'Hệ thống chưa kết nối Cloud. Vui lòng thiết lập trong Cài đặt.' } };
+        console.warn("Chưa cấu hình Supabase");
+        return { data: null, error: { message: 'Cloud disconnected' } };
       };
     }
-
-    const client = createClient(url, key);
     return (client as any)[prop];
   }
 });

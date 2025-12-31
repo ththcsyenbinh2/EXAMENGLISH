@@ -88,36 +88,40 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsProcessing(true);
-    setLoadingStep('AI đang bóc tách nội dung Word...');
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
-      const extracted = await extractQuestionsFromText(result.value);
+const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  setIsProcessing(true);
+  setLoadingStep('AI đang bóc tách và nhận diện đáp án...');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
 
-      const newExam: Exam = {
-        id: crypto.randomUUID(),
-        exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-        title: extracted.title || file.name.replace('.docx', ''),
-        questions: extracted.questions.map((q: any) => ({
-          ...q,
-          correctAnswerIndex: q.type === 'mcq' ? null : undefined
-        })),
-        is_open: true,
-        created_at: new Date().toISOString()
-      };
+    // Dùng mammoth để lấy text + định dạng (bold)
+    const { value: html, messages } = await (window as any).mammoth.convertToHtml(
+      { arrayBuffer },
+      { includeDefaultStyleMap: true }
+    );
 
-      setCurrentExam(newExam);
-      setMode(AppMode.EXAM_SETUP);
-    } catch (error: any) {
-      alert("Lỗi xử lý file: " + error.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+    // Gửi HTML này cho Gemini để phân tích (có giữ bold)
+    const extracted = await extractQuestionsFromHtmlWithBold(html);
+
+    const newExam: Exam = {
+      id: crypto.randomUUID(),
+      exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
+      title: extracted.title || file.name.replace('.docx', ''),
+      questions: extracted.questions,
+      is_open: true,
+      created_at: new Date().toISOString()
+    };
+
+    setCurrentExam(newExam);
+    setMode(AppMode.EXAM_SETUP);
+  } catch (error: any) {
+    alert("Lỗi xử lý file: " + (error.message || "Không đọc được định dạng"));
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
   const deleteExam = async (id: string) => {
     if (!confirm("Xóa đề này và tất cả bài làm của học sinh?")) return;

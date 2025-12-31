@@ -103,7 +103,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     );
 
     // Gửi HTML này cho Gemini để phân tích (có giữ bold)
-    //const extracted = await extractQuestionsFromHtmlWithBold(html);
+    const extracted = await extractQuestionsFromHtmlWithBold(html);
 
     const newExam: Exam = {
       id: crypto.randomUUID(),

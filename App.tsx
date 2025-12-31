@@ -5,8 +5,8 @@ import { extractQuestionsFromText } from './services/geminiService';
 import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/supabase';
 import { 
   GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
-  Database, Lock, Unlock, FileText, RefreshCw, CheckCircle2, 
-  CloudLightning, Settings, ServerCrash, ClipboardList, Info, Save, XCircle, AlertTriangle, Link2, Copy, ExternalLink
+  Database, Settings, RefreshCw, CheckCircle2, CloudLightning, 
+  ClipboardList, Info, Save, Activity, Eye, FileText, ChevronRight
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -14,10 +14,10 @@ const App: React.FC = () => {
   const [exams, setExams] = useState<Exam[]>([]);
   const [submissions, setSubmissions] = useState<StudentSubmission[]>([]);
   const [currentExam, setCurrentExam] = useState<Exam | null>(null);
+  const [selectedSubmission, setSelectedSubmission] = useState<StudentSubmission | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDbLoading, setIsDbLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
-  const [dbError, setDbError] = useState<string | null>(null);
   
   const [showSetup, setShowSetup] = useState(false);
   const [inputUrl, setInputUrl] = useState('');
@@ -26,21 +26,20 @@ const App: React.FC = () => {
   const [studentName, setStudentName] = useState('');
   const [className, setClassName] = useState('');
   const [examCodeInput, setExamCodeInput] = useState('');
-  const [studentAnswers, setStudentAnswers] = useState<Record<string, number>>({});
+  const [studentAnswers, setStudentAnswers] = useState<Record<string, any>>({});
   const [currentSubmission, setCurrentSubmission] = useState<StudentSubmission | null>(null);
   const [timer, setTimer] = useState(0);
 
   const configured = isSupabaseConfigured();
 
   useEffect(() => {
-    if (configured) {
-      fetchInitialData();
-    } else {
-      if (window.location.hash !== '#hocsinh') {
-        setShowSetup(true);
-      }
-    }
-    
+    if (!configured) return;
+    fetchInitialData();
+    const channel = supabase.channel('db-changes').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'submissions' }, () => fetchInitialData()).subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [configured]);
+
+  useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash;
       if (hash === '#hocsinh') setMode(AppMode.STUDENT_ENTRY);
@@ -49,119 +48,37 @@ const App: React.FC = () => {
     handleHash();
     window.addEventListener('hashchange', handleHash);
     return () => window.removeEventListener('hashchange', handleHash);
-  }, [configured]);
+  }, []);
 
   useEffect(() => {
     let interval: any;
-    if (mode === AppMode.STUDENT_EXAM) {
-      interval = setInterval(() => setTimer(prev => prev + 1), 1000);
-    }
+    if (mode === AppMode.STUDENT_EXAM) interval = setInterval(() => setTimer(prev => prev + 1), 1000);
     return () => clearInterval(interval);
   }, [mode]);
 
   const fetchInitialData = async () => {
     if (!isSupabaseConfigured()) return;
     setIsDbLoading(true);
-    setDbError(null);
-    try {
-      const { data: exData, error: exErr } = await supabase
-        .from('exams')
-        .select('id, exam_code, title, questions, is_open, created_at')
-        .order('created_at', { ascending: false });
-      
-      if (exErr) throw exErr;
-      setExams(exData || []);
-      
-      const { data: subData, error: subErr } = await supabase
-        .from('submissions')
-        .select('id, exam_id, student_name, class_name, answers, score, total, submitted_at, time_spent')
-        .order('submitted_at', { ascending: false });
-        
-      if (subErr) throw subErr;
-      setSubmissions(subData || []);
-    } catch (e: any) {
-      console.error("Fetch Error:", e);
-      setDbError(e.message);
-    } finally {
-      setIsDbLoading(false);
-    }
-  };
-
-  const generateAdminLink = () => {
-    const { url, key } = getSupabaseConfig();
-    if (!url || !key) return alert("Vui lòng cấu hình Database trước!");
-    const baseUrl = window.location.origin + window.location.pathname;
-    const portableLink = `${baseUrl}?s_url=${encodeURIComponent(url)}&s_key=${encodeURIComponent(key)}`;
-    navigator.clipboard.writeText(portableLink);
-    alert("Đã copy Link Quản Trị Di Động!\n\nHãy lưu link này vào Email hoặc Zalo. Khi mở link này ở bất kỳ máy tính nào khác, hệ thống sẽ tự động đăng nhập và kết nối Database.");
-  };
-
-  const handleSaveConfig = () => {
-    if (!inputUrl.trim().startsWith('https://') || inputKey.trim().length < 20) {
-      alert("Thông tin cấu hình không hợp lệ!");
-      return;
-    }
-    localStorage.setItem('ST_SUPABASE_URL', inputUrl.trim());
-    localStorage.setItem('ST_SUPABASE_ANON_KEY', inputKey.trim());
-    alert("Cấu hình đã được lưu!");
-    window.location.reload();
+    const { data: exData } = await supabase.from('exams').select('*').order('created_at', { ascending: false });
+    setExams(exData || []);
+    const { data: subData } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false });
+    setSubmissions(subData || []);
+    setIsDbLoading(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessing(true);
-    setLoadingStep('Đang đọc file Word...');
+    setLoadingStep('AI đang phân tích nội dung...');
     try {
       const arrayBuffer = await file.arrayBuffer();
       const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
-      setLoadingStep('AI đang bóc tách đề...');
       const extracted = await extractQuestionsFromText(result.value);
-      
-      const newExam: Exam = {
-        id: crypto.randomUUID(),
-        exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-        title: extracted.title,
-        questions: extracted.questions,
-        is_open: true,
-        created_at: new Date().toISOString()
-      };
-      
-      setCurrentExam(newExam);
+      setCurrentExam({ id: crypto.randomUUID(), exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(), title: extracted.title, questions: extracted.questions, is_open: true, created_at: new Date().toISOString() });
       setMode(AppMode.EXAM_SETUP);
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const saveExamToCloud = async () => {
-    if (!currentExam) return;
-    setIsDbLoading(true);
-    try {
-      const payload = {
-        id: currentExam.id,
-        exam_code: currentExam.exam_code,
-        title: currentExam.title,
-        questions: currentExam.questions,
-        is_open: currentExam.is_open,
-        created_at: currentExam.created_at
-      };
-
-      const { error } = await supabase.from('exams').insert([payload]);
-      if (error) throw error;
-      
-      await fetchInitialData();
-      alert("Đã lưu đề thi lên Cloud!");
-      setMode(AppMode.TEACHER_DASHBOARD);
-    } catch (error: any) {
-      console.error("Insert Error:", error);
-      setDbError(error.message);
-      alert("Lỗi lưu trữ: " + error.message);
-    } finally {
-      setIsDbLoading(false);
-    }
+    } catch (error: any) { alert(error.message); }
+    finally { setIsProcessing(false); }
   };
 
   const formatTime = (s: number) => {
@@ -174,333 +91,248 @@ const App: React.FC = () => {
     const currentCfg = getSupabaseConfig();
     return (
       <div className="min-h-screen bg-[#F0F2F5] flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full bg-white p-12 rounded-[40px] shadow-2xl border border-slate-200 animate-fade-in relative">
+        <div className="max-w-xl w-full bg-white p-10 rounded-[40px] shadow-2xl border border-slate-200">
           <div className="flex items-center gap-4 mb-8">
-            <div className="bg-slate-900 p-3 rounded-2xl text-white">
-              <Database size={28}/>
+            <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg"><Database size={28}/></div>
+            <h2 className="text-2xl font-black text-slate-800">Cấu hình Cloud</h2>
+          </div>
+          <div className="space-y-6 mb-10">
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Supabase URL</label>
+              <input type="text" className="w-full p-4 rounded-xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold" value={inputUrl || currentCfg.url} onChange={e => setInputUrl(e.target.value)} />
             </div>
             <div>
-              <h2 className="text-2xl font-black text-slate-800">Kết nối Hệ thống Cloud</h2>
-              <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Enterprise Connection</p>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Anon Key</label>
+              <textarea className="w-full p-4 rounded-xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold h-24" value={inputKey || currentCfg.key} onChange={e => setInputKey(e.target.value)} />
             </div>
           </div>
-
-          <div className="bg-indigo-50 border-2 border-indigo-100 p-6 rounded-3xl mb-8">
-            <div className="flex items-center gap-2 mb-2 text-indigo-600 font-black text-xs uppercase tracking-widest">
-               <Info size={16}/> Mẹo Chuyên Nghiệp
-            </div>
-            <p className="text-indigo-900 text-sm font-medium leading-relaxed">
-              Sau khi lưu cấu hình, hãy sử dụng nút <b>"Tạo Link Quản Trị"</b> để đồng bộ toàn bộ dữ liệu sang máy tính khác mà không cần nhập lại mã.
-            </p>
-          </div>
-
-          <div className="space-y-5 mb-10">
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Supabase Project URL</label>
-              <input 
-                type="text" 
-                placeholder="https://xyz.supabase.co" 
-                className="w-full p-4 rounded-xl bg-slate-50 border-2 border-transparent focus:border-slate-900 outline-none font-bold text-slate-700 transition-all"
-                value={inputUrl || currentCfg.url}
-                onChange={e => setInputUrl(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Supabase Anon Key</label>
-              <textarea 
-                placeholder="Dán mã bảo mật tại đây..." 
-                className="w-full p-4 rounded-xl bg-slate-50 border-2 border-transparent focus:border-slate-900 outline-none font-bold text-slate-700 h-24 transition-all"
-                value={inputKey || currentCfg.key}
-                onChange={e => setInputKey(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <button 
-              onClick={handleSaveConfig}
-              className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl flex items-center justify-center gap-2 hover:bg-black transition-all active:scale-95"
-            >
-              <Save size={20}/> XÁC NHẬN KẾT NỐI
-            </button>
-            <button 
-              onClick={() => {
-                if(isSupabaseConfigured()) setShowSetup(false);
-                else alert("Vui lòng cấu hình hệ thống!");
-              }}
-              className="w-full py-4 rounded-2xl font-black text-slate-400 border border-slate-100 hover:bg-slate-50 transition-all"
-            >
-              Để sau
-            </button>
-          </div>
+          <button onClick={() => { localStorage.setItem('ST_SUPABASE_URL', inputUrl.trim()); localStorage.setItem('ST_SUPABASE_ANON_KEY', inputKey.trim()); window.location.reload(); }} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-xl hover:bg-indigo-700 transition-all">LƯU CẤU HÌNH</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FDFDFF] font-sans text-slate-900">
+    <div className="min-h-screen bg-[#FDFDFF] text-slate-900">
       <header className="bg-white/80 border-b border-slate-100 py-4 px-6 sticky top-0 z-[100] backdrop-blur-md">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-3 cursor-pointer group" onClick={() => window.location.hash = ''}>
-            <div className="bg-slate-900 p-2.5 rounded-2xl text-white shadow-lg group-hover:scale-110 transition-transform">
-              <GraduationCap size={24}/>
-            </div>
-            <div>
-              <span className="text-xl font-black tracking-tight block leading-none">EXAM<span className="text-indigo-600">ENGLISH</span></span>
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5 block">TRƯỜNG TH-THCS YÊN BÌNH</span>
-            </div>
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.location.hash = ''}>
+            <div className="bg-indigo-600 p-2.5 rounded-2xl text-white shadow-lg"><GraduationCap size={24}/></div>
+            <span className="text-xl font-black text-slate-900">Edu<span className="text-indigo-600">Cloud</span></span>
           </div>
-          
           <div className="flex items-center gap-3">
-            {configured && (
-              <button 
-                onClick={generateAdminLink}
-                className="hidden md:flex items-center gap-2 bg-indigo-50 text-indigo-600 px-4 py-2.5 rounded-xl text-xs font-black border border-indigo-100 hover:bg-indigo-100 transition-all"
-                title="Tạo link để mở trên máy tính khác không cần nhập Key"
-              >
-                <Link2 size={16}/> LINK QUẢN TRỊ
-              </button>
-            )}
-            <button onClick={() => setShowSetup(true)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-slate-900">
-              <Settings size={20}/>
-            </button>
-            <button onClick={fetchInitialData} className="p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-400">
-              <RefreshCw size={20} className={isDbLoading ? 'animate-spin' : ''}/>
-            </button>
+             {configured && <button onClick={() => { const {url, key} = getSupabaseConfig(); navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?s_url=${encodeURIComponent(url)}&s_key=${encodeURIComponent(key)}`); alert("Đã copy link quản trị!"); }} className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-black">LINK QUẢN TRỊ</button>}
+             <button onClick={() => setShowSetup(true)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-400"><Settings size={20}/></button>
           </div>
         </div>
       </header>
 
       <main className="py-8 px-6 max-w-7xl mx-auto">
-        {isProcessing && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center p-6 text-center">
-            <div className="bg-white p-12 rounded-[48px] shadow-2xl max-w-lg w-full scale-in">
-               <CloudLightning size={48} className="text-indigo-600 animate-bounce mx-auto mb-6"/>
-               <h2 className="text-2xl font-black mb-2">{loadingStep}</h2>
-               <p className="text-slate-400 font-bold">Vui lòng chờ giây lát...</p>
-            </div>
-          </div>
-        )}
+        {isProcessing && <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center"><div className="bg-white p-12 rounded-[48px] shadow-2xl text-center"><CloudLightning size={48} className="text-indigo-600 animate-bounce mx-auto mb-6"/><h2 className="text-2xl font-black">{loadingStep}</h2></div></div>}
 
         {mode === AppMode.TEACHER_DASHBOARD && (
           <div className="space-y-10 animate-fade-in">
-             <div className="bg-slate-900 p-12 rounded-[48px] text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-8 relative overflow-hidden group">
-                <div className="absolute -right-20 -bottom-20 w-80 h-80 bg-white/5 rounded-full blur-3xl group-hover:scale-110 transition-transform duration-1000"></div>
-                <div className="relative z-10">
-                  <h1 className="text-4xl font-black mb-4 tracking-tight">Hệ thống Đề thi Cloud 👋</h1>
-                  <p className="text-slate-400 font-medium text-lg">Dữ liệu được lưu trữ tập trung và bảo mật trên hạ tầng Cloud.</p>
-                </div>
-                <label className="relative z-10 bg-white text-slate-900 px-10 py-5 rounded-[28px] font-black text-xl shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-3">
-                  <Plus size={24}/> TẢI FILE WORD (.DOCX)
+             <div className="bg-gradient-to-br from-indigo-600 to-violet-700 p-12 rounded-[48px] text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-8">
+                <div><h1 className="text-4xl font-black mb-4 tracking-tight">Quản lý Đề thi Hybrid 📚</h1><p className="text-indigo-100 text-lg opacity-80">Hỗ trợ cả trắc nghiệm và tự luận với AI bóc tách.</p></div>
+                <label className="bg-white text-indigo-600 px-10 py-5 rounded-[28px] font-black text-xl shadow-xl hover:scale-105 transition-all cursor-pointer flex items-center gap-3">
+                  <Plus size={24}/> TẢI ĐỀ WORD
                   <input type="file" accept=".docx" className="hidden" onChange={handleFileUpload} />
                 </label>
              </div>
-
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {exams.map(exam => (
-                  <div key={exam.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group flex flex-col min-h-[280px]">
-                    <div className="flex justify-between items-center mb-6">
-                      <span className="bg-slate-50 text-slate-500 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">PHÒNG: {exam.exam_code}</span>
-                      <button 
-                        onClick={async () => {
-                          const { error } = await supabase.from('exams').update({ is_open: !exam.is_open }).eq('id', exam.id);
-                          if(!error) fetchInitialData();
-                        }}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-black transition-all ${exam.is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-400'}`}>
-                        {exam.is_open ? 'ĐANG MỞ' : 'ĐÃ ĐÓNG'}
-                      </button>
-                    </div>
-                    <h3 className="text-xl font-black text-slate-800 mb-6 line-clamp-2 h-14">{exam.title}</h3>
-                    <div className="flex gap-2 mt-auto pt-6 border-t border-slate-50">
-                       <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-slate-100 text-slate-700 py-4 rounded-2xl font-bold text-sm hover:bg-slate-200 transition-colors">BẢNG ĐIỂM</button>
-                       <button onClick={() => {
-                          const link = `${window.location.origin}${window.location.pathname}#hocsinh`;
-                          navigator.clipboard.writeText(link);
-                          alert("Đã copy link học sinh!");
-                       }} className="p-4 bg-white border border-slate-100 text-slate-400 rounded-2xl hover:text-indigo-600 transition-colors"><Share2 size={20}/></button>
-                       <button 
-                        onClick={async () => {
-                          if(confirm("Xóa đề này khỏi hệ thống Cloud?")) {
-                            const { error } = await supabase.from('exams').delete().eq('id', exam.id);
-                            if(!error) fetchInitialData();
-                          }
-                        }}
-                        className="p-4 bg-white border border-slate-100 text-slate-400 rounded-2xl hover:text-red-500 transition-colors"
-                       >
-                        <Trash2 size={20}/>
-                       </button>
+                  <div key={exam.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col min-h-[300px]">
+                    <div className="flex justify-between items-center mb-6"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">MÃ: {exam.exam_code}</span><span className={`px-3 py-1 rounded-full text-[9px] font-black ${exam.is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-400'}`}>{exam.is_open ? 'MỞ' : 'ĐÓNG'}</span></div>
+                    <h3 className="text-xl font-black text-slate-800 mb-6 line-clamp-2 h-14 leading-tight">{exam.title}</h3>
+                    <div className="flex gap-2 mt-auto">
+                       <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-xs">XEM KẾT QUẢ</button>
+                       <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#hocsinh`); alert("Đã copy link học sinh!"); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl"><Share2 size={18}/></button>
+                       <button onClick={async () => { if(confirm("Xóa đề này?")) { await supabase.from('exams').delete().eq('id', exam.id); fetchInitialData(); } }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-red-500"><Trash2 size={18}/></button>
                     </div>
                   </div>
                 ))}
-                {exams.length === 0 && !isDbLoading && (
-                  <div className="col-span-full py-20 text-center bg-slate-50 rounded-[48px] border-2 border-dashed border-slate-200">
-                    <ClipboardList size={48} className="text-slate-200 mx-auto mb-4"/>
-                    <p className="text-slate-400 font-bold">Chưa có dữ liệu đề thi trên Cloud.</p>
-                  </div>
-                )}
-             </div>
-          </div>
-        )}
-
-        {mode === AppMode.STUDENT_ENTRY && (
-          <div className="max-w-md mx-auto py-12 animate-fade-in">
-             <div className="bg-white p-12 rounded-[56px] shadow-2xl border border-slate-100 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-3 bg-slate-900"></div>
-                <h2 className="text-3xl font-black text-center mb-10 tracking-tight text-slate-800">Phòng thi Online</h2>
-                <div className="space-y-4 mb-10">
-                  <input type="text" placeholder="Họ và tên học sinh" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-slate-900 outline-none font-bold" value={studentName} onChange={e => setStudentName(e.target.value)} />
-                  <input type="text" placeholder="Lớp" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-slate-900 outline-none font-bold" value={className} onChange={e => setClassName(e.target.value)} />
-                  <div className="pt-4 border-t border-slate-100 mt-6">
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Mã phòng thi</label>
-                    <input type="text" placeholder="ABCXYZ" className="w-full p-6 rounded-3xl bg-slate-900 border-2 border-slate-900 text-center font-black text-white uppercase text-3xl tracking-widest" value={examCodeInput} onChange={e => setExamCodeInput(e.target.value)} />
-                  </div>
-                </div>
-                <button onClick={async () => {
-                   if(!studentName || !className || !examCodeInput) return alert("Vui lòng điền đủ thông tin!");
-                   setIsDbLoading(true);
-                   const { data, error } = await supabase.from('exams').select('id, is_open, questions, title').eq('exam_code', examCodeInput.toUpperCase()).single();
-                   if(data && data.is_open) {
-                      setCurrentExam(data as any); setStudentAnswers({}); setTimer(0); setMode(AppMode.STUDENT_EXAM);
-                   } else {
-                      alert("Mã phòng sai hoặc phòng thi đã đóng!");
-                   }
-                   setIsDbLoading(false);
-                }} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl shadow-xl hover:bg-black transition-all active:scale-95">VÀO PHÒNG THI</button>
              </div>
           </div>
         )}
 
         {mode === AppMode.STUDENT_EXAM && currentExam && (
-          <div className="max-w-3xl mx-auto space-y-8 animate-fade-in pb-20">
-             <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-xl sticky top-24 z-50 flex justify-between items-center border border-slate-200">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center font-black">{currentExam.questions.length}</div>
-                  <h2 className="font-black text-slate-800 truncate max-w-[200px]">{currentExam.title}</h2>
-                </div>
-                <div className="bg-slate-50 px-6 py-2.5 rounded-2xl font-black text-slate-900 text-2xl tabular-nums">
-                  <Clock size={20} className="inline mr-2 mb-1"/>
-                  {formatTime(timer)}
-                </div>
+          <div className="max-w-3xl mx-auto space-y-8 animate-fade-in pb-32">
+             <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-xl sticky top-24 z-50 flex justify-between items-center border border-slate-100">
+                <div className="flex items-center gap-4"><div className="px-4 py-2 bg-slate-900 text-white rounded-xl font-black">Câu {Object.keys(studentAnswers).length}/{currentExam.questions.length}</div></div>
+                <div className="text-2xl font-black text-indigo-600 tabular-nums"><Clock size={20} className="inline mr-2 mb-1"/>{formatTime(timer)}</div>
              </div>
+             
              {currentExam.questions.map((q, idx) => (
-                <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
-                   <p className="text-xl font-bold text-slate-800 mb-8"><span className="text-slate-400 mr-2">{idx+1}.</span> {q.prompt}</p>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {q.options.map((opt, oIdx) => (
-                        <button key={oIdx} onClick={() => setStudentAnswers({...studentAnswers, [q.id]: oIdx})} className={`p-6 rounded-2xl border-2 font-bold text-left transition-all ${studentAnswers[q.id] === oIdx ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-slate-50 border-transparent text-slate-600 hover:bg-slate-100'}`}>
-                           <span className={`inline-block w-8 h-8 rounded-lg text-center leading-8 mr-3 ${studentAnswers[q.id] === oIdx ? 'bg-white/20' : 'bg-white text-slate-900'}`}>{String.fromCharCode(65+oIdx)}</span>
-                           {opt}
-                        </button>
-                      ))}
-                   </div>
+                <div key={idx} className="bg-white p-10 rounded-[40px] shadow-sm border border-slate-100">
+                   <p className="text-xl font-bold text-slate-800 mb-8 leading-relaxed"><span className="text-indigo-600 mr-2">Câu {idx+1}:</span> {q.prompt}</p>
+                   {q.type === 'mcq' ? (
+                     <div className="grid grid-cols-1 gap-4">
+                        {q.options?.map((opt, oIdx) => (
+                          <button key={oIdx} onClick={() => setStudentAnswers({...studentAnswers, [q.id]: oIdx})} className={`p-6 rounded-2xl border-2 font-bold text-left transition-all flex items-center gap-4 ${studentAnswers[q.id] === oIdx ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-50 border-transparent text-slate-600 hover:bg-slate-100'}`}>
+                             <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${studentAnswers[q.id] === oIdx ? 'bg-white/20' : 'bg-white text-indigo-600 shadow-sm'}`}>{String.fromCharCode(65+oIdx)}</span>
+                             {opt}
+                          </button>
+                        ))}
+                     </div>
+                   ) : (
+                     <textarea 
+                        className="w-full p-6 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-medium text-lg min-h-[200px]" 
+                        placeholder="Nhập bài làm của em tại đây..."
+                        value={studentAnswers[q.id] || ''}
+                        onChange={(e) => setStudentAnswers({...studentAnswers, [q.id]: e.target.value})}
+                     />
+                   )}
                 </div>
              ))}
              <button onClick={async () => {
-                if(!confirm("Xác nhận nộp bài thi?")) return;
-                let score = 0;
-                currentExam.questions.forEach(q => { if(studentAnswers[q.id] === q.correctAnswerIndex) score++; });
-                
-                const payload = { 
-                   id: crypto.randomUUID(),
-                   exam_id: currentExam.id, student_name: studentName, class_name: className, 
-                   answers: studentAnswers, score, total: currentExam.questions.length, 
-                   time_spent: timer, submitted_at: new Date().toISOString() 
-                };
-                setIsDbLoading(true);
-                const { error } = await supabase.from('submissions').insert([payload]);
-                if(!error) { setCurrentSubmission(payload as any); setMode(AppMode.STUDENT_RESULT); }
-                else alert("Lỗi khi nộp bài: " + error.message);
-                setIsDbLoading(false);
-             }} className="w-full bg-emerald-600 text-white py-8 rounded-[40px] font-black text-3xl shadow-xl hover:bg-emerald-700 transition-all active:scale-95">NỘP BÀI THI</button>
-          </div>
-        )}
-
-        {mode === AppMode.STUDENT_RESULT && currentSubmission && (
-           <div className="max-w-md mx-auto py-12 text-center animate-fade-in">
-              <div className="bg-white p-14 rounded-[64px] shadow-2xl border border-slate-50">
-                 <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-8"><Trophy size={48} className="animate-bounce"/></div>
-                 <h2 className="text-4xl font-black mb-4 text-slate-800">Xong!</h2>
-                 <p className="text-slate-400 font-bold mb-10">Kết quả của bạn đã lưu lên hệ thống</p>
-                 <div className="bg-slate-900 p-10 rounded-[40px] mb-10 transform hover:scale-105 transition-transform">
-                    <div className="text-6xl font-black text-white">{currentSubmission.score}<span className="text-2xl text-slate-500">/{currentSubmission.total}</span></div>
-                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest mt-2">ĐIỂM SỐ</div>
-                 </div>
-                 <button onClick={() => window.location.reload()} className="w-full bg-slate-100 text-slate-900 py-6 rounded-3xl font-black text-xl hover:bg-slate-200 transition-all">THOÁT</button>
-              </div>
-           </div>
-        )}
-
-        {mode === AppMode.EXAM_SETUP && currentExam && (
-          <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
-             <div className="bg-white p-10 rounded-[48px] shadow-xl flex flex-col md:flex-row justify-between items-center gap-8 border border-emerald-100 sticky top-24 z-50 backdrop-blur-md bg-white/90">
-                <div className="text-center md:text-left">
-                  <h2 className="text-3xl font-black mb-2 text-emerald-600">AI trích xuất thành công!</h2>
-                  <p className="text-slate-500 font-medium">Bạn có thể kiểm tra lại đề trước khi xuất bản lên Cloud.</p>
-                </div>
-                <button onClick={saveExamToCloud} className="w-full md:w-auto bg-slate-900 text-white px-12 py-5 rounded-[28px] font-black text-xl shadow-xl hover:bg-black transition-all active:scale-95 flex items-center gap-3 justify-center">
-                  <Save size={24}/> XUẤT BẢN CLOUD
-                </button>
-             </div>
-             <div className="space-y-6">
-                {currentExam.questions.map((q, idx) => (
-                  <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
-                     <p className="font-bold text-lg mb-6 text-slate-800"><span className="text-slate-400 mr-2">Câu {idx+1}:</span> {q.prompt}</p>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {q.options.map((opt, oIdx) => (
-                          <div key={oIdx} className={`p-4 rounded-xl border-2 font-bold ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-slate-50 border-transparent text-slate-400'}`}>
-                             <span className="mr-2">{String.fromCharCode(65+oIdx)}.</span> {opt}
-                          </div>
-                        ))}
-                     </div>
-                  </div>
-                ))}
-             </div>
+                if(!confirm("Xác nhận nộp bài?")) return;
+                let mcqScore = 0;
+                let mcqCount = 0;
+                currentExam.questions.forEach(q => { if(q.type === 'mcq') { mcqCount++; if(studentAnswers[q.id] === q.correctAnswerIndex) mcqScore++; } });
+                const payload = { id: crypto.randomUUID(), exam_id: currentExam.id, student_name: studentName, class_name: className, answers: studentAnswers, score: mcqScore, total: mcqCount, time_spent: timer, submitted_at: new Date().toISOString() };
+                await supabase.from('submissions').insert([payload]);
+                setCurrentSubmission(payload as any); setMode(AppMode.STUDENT_RESULT);
+             }} className="w-full bg-emerald-500 text-white py-8 rounded-[40px] font-black text-3xl shadow-2xl hover:bg-emerald-600 transition-all">NỘP BÀI THI</button>
           </div>
         )}
 
         {mode === AppMode.VIEW_SUBMISSIONS && currentExam && (
-          <div className="space-y-8 animate-fade-in pb-20">
-             <div className="flex items-center gap-4">
-                <button onClick={() => setMode(AppMode.TEACHER_DASHBOARD)} className="p-4 bg-white rounded-2xl shadow-sm text-slate-400 hover:text-slate-900 transition-all border border-slate-100"><ArrowLeft size={24}/></button>
-                <div>
-                  <h1 className="text-3xl font-black text-slate-800 tracking-tight">Kết quả học sinh</h1>
-                  <p className="text-slate-400 font-bold uppercase text-xs tracking-widest">{currentExam.title}</p>
+          <div className="max-w-6xl mx-auto space-y-8 animate-fade-in pb-20">
+             <div className="flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                   <button onClick={() => setMode(AppMode.TEACHER_DASHBOARD)} className="p-4 bg-white rounded-2xl border border-slate-100"><ArrowLeft size={24}/></button>
+                   <div><h1 className="text-3xl font-black text-slate-800">Giám sát bài làm</h1><p className="text-slate-400 font-bold text-xs uppercase tracking-widest">{currentExam.title}</p></div>
+                </div>
+                <div className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest"><Activity size={16} className="animate-pulse"/> Realtime Live</div>
+             </div>
+
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1 space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                   {submissions.filter(s => s.exam_id === currentExam.id).map(s => (
+                      <div 
+                        key={s.id} 
+                        onClick={() => setSelectedSubmission(s)}
+                        className={`p-6 rounded-3xl border-2 transition-all cursor-pointer ${selectedSubmission?.id === s.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl' : 'bg-white border-slate-50 hover:border-indigo-100'}`}
+                      >
+                         <div className="font-black text-lg">{s.student_name}</div>
+                         <div className={`text-xs font-bold ${selectedSubmission?.id === s.id ? 'text-indigo-100' : 'text-slate-400'}`}>{s.class_name} • {formatTime(s.time_spent)}</div>
+                         <div className="mt-4 flex justify-between items-center">
+                            <span className={`px-3 py-1 rounded-lg text-[10px] font-black ${selectedSubmission?.id === s.id ? 'bg-white/20' : 'bg-indigo-50 text-indigo-600'}`}>MCQ: {s.score}/{s.total}</span>
+                            <ChevronRight size={16}/>
+                         </div>
+                      </div>
+                   ))}
+                </div>
+                
+                <div className="lg:col-span-2 bg-white rounded-[48px] shadow-2xl border border-slate-100 p-10 overflow-y-auto max-h-[70vh]">
+                   {selectedSubmission ? (
+                     <div className="space-y-10">
+                        <div className="border-b border-slate-100 pb-8 flex justify-between items-start">
+                           <div>
+                              <h2 className="text-3xl font-black text-slate-800">{selectedSubmission.student_name}</h2>
+                              <p className="text-slate-400 font-bold uppercase text-xs">Lớp: {selectedSubmission.class_name}</p>
+                           </div>
+                           <div className="bg-slate-900 text-white px-8 py-4 rounded-3xl text-center">
+                              <div className="text-2xl font-black">{selectedSubmission.score}/{selectedSubmission.total}</div>
+                              <div className="text-[8px] font-black text-slate-500 uppercase">Điểm trắc nghiệm</div>
+                           </div>
+                        </div>
+                        <div className="space-y-8">
+                           {currentExam.questions.map((q, idx) => (
+                             <div key={idx} className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <p className="font-bold text-slate-800 mb-4 text-lg">Câu {idx+1}: {q.prompt}</p>
+                                {q.type === 'mcq' ? (
+                                  <div className="flex items-center gap-3">
+                                     <span className={`px-4 py-2 rounded-xl font-black ${selectedSubmission.answers[q.id] === q.correctAnswerIndex ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                        Học sinh chọn: {String.fromCharCode(65 + (selectedSubmission.answers[q.id] as number))}
+                                     </span>
+                                     <span className="text-xs font-bold text-slate-400">Đáp án đúng: {String.fromCharCode(65 + (q.correctAnswerIndex || 0))}</span>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-4">
+                                     <div className="bg-white p-6 rounded-2xl border-2 border-indigo-100 font-medium text-slate-700 leading-relaxed italic">
+                                        "{selectedSubmission.answers[q.id] || '(Học sinh để trống)'}"
+                                     </div>
+                                     {q.sampleAnswer && (
+                                       <div className="bg-emerald-50 p-4 rounded-xl text-xs">
+                                          <span className="font-black text-emerald-700 uppercase block mb-1">Gợi ý đáp án:</span>
+                                          <span className="text-emerald-900">{q.sampleAnswer}</span>
+                                       </div>
+                                     )}
+                                  </div>
+                                )}
+                             </div>
+                           ))}
+                        </div>
+                     </div>
+                   ) : (
+                     <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                        <Eye size={64} className="mb-6 opacity-20"/>
+                        <p className="font-black text-xl">Chọn một học sinh để xem chi tiết bài làm</p>
+                     </div>
+                   )}
                 </div>
              </div>
-             <div className="bg-white rounded-[48px] shadow-xl overflow-hidden border border-slate-100">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        <tr>
-                          <th className="px-10 py-8">Học sinh</th>
-                          <th className="px-10 py-8">Lớp</th>
-                          <th className="px-10 py-8 text-center">Điểm số</th>
-                          <th className="px-10 py-8 text-center">Thời lượng</th>
-                          <th className="px-10 py-8 text-right">Ngày nộp</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {submissions.filter(s => s.exam_id === currentExam.id).map(s => (
-                          <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-10 py-7 font-black text-slate-800 text-lg">{s.student_name}</td>
-                            <td className="px-10 py-7 font-bold text-slate-500">{s.class_name}</td>
-                            <td className="px-10 py-7 text-center font-black text-indigo-600 text-2xl">{s.score} <span className="text-sm text-slate-300">/{s.total}</span></td>
-                            <td className="px-10 py-7 text-center font-bold text-slate-400">
-                              {formatTime(s.time_spent)}
-                            </td>
-                            <td className="px-10 py-7 text-right text-slate-400 text-xs font-bold">{new Date(s.submitted_at).toLocaleDateString('vi-VN')}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
+          </div>
+        )}
+
+        {/* Màn hình Setup sau khi AI đọc Word */}
+        {mode === AppMode.EXAM_SETUP && currentExam && (
+          <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
+             <div className="bg-white/80 backdrop-blur-md p-10 rounded-[40px] shadow-xl border border-emerald-100 sticky top-24 z-50 flex justify-between items-center">
+                <div><h2 className="text-2xl font-black text-emerald-600">Bóc tách hoàn tất!</h2><p className="text-slate-500 font-medium">Hệ thống đã nhận diện được {currentExam.questions.filter(q => q.type === 'mcq').length} câu trắc nghiệm và {currentExam.questions.filter(q => q.type === 'essay').length} câu tự luận.</p></div>
+                <button onClick={async () => { await supabase.from('exams').insert([currentExam]); fetchInitialData(); setMode(AppMode.TEACHER_DASHBOARD); }} className="bg-indigo-600 text-white px-10 py-5 rounded-3xl font-black text-xl shadow-lg">XUẤT BẢN CLOUD</button>
+             </div>
+             {currentExam.questions.map((q, idx) => (
+               <div key={idx} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm relative overflow-hidden">
+                  <div className={`absolute top-0 right-0 px-6 py-2 rounded-bl-3xl text-[10px] font-black uppercase tracking-widest ${q.type === 'mcq' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>{q.type === 'mcq' ? 'Trắc nghiệm' : 'Tự luận'}</div>
+                  <p className="font-bold text-lg mb-6 max-w-[80%]">Câu {idx+1}: {q.prompt}</p>
+                  {q.type === 'mcq' ? (
+                    <div className="grid grid-cols-2 gap-4">
+                       {q.options?.map((opt, oIdx) => (
+                         <div key={oIdx} className={`p-4 rounded-xl border-2 font-bold ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-slate-50 border-transparent text-slate-400'}`}>{opt}</div>
+                       ))}
+                    </div>
+                  ) : (
+                    <div className="bg-slate-50 p-6 rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 font-bold text-center">Học sinh sẽ nhập văn bản tại đây</div>
+                  )}
+               </div>
+             ))}
+          </div>
+        )}
+
+        {/* Mode Student Entry giữ giao diện thống nhất */}
+        {mode === AppMode.STUDENT_ENTRY && (
+          <div className="max-w-md mx-auto py-20 animate-fade-in">
+             <div className="bg-white p-12 rounded-[56px] shadow-2xl text-center border border-slate-50">
+                <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white mx-auto mb-10 shadow-xl"><FileText size={40}/></div>
+                <h2 className="text-3xl font-black mb-10 text-slate-800 tracking-tight">Khu vực Học sinh</h2>
+                <div className="space-y-4 mb-10">
+                   <input type="text" placeholder="Họ và tên của em" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold" value={studentName} onChange={e => setStudentName(e.target.value)} />
+                   <input type="text" placeholder="Lớp" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold" value={className} onChange={e => setClassName(e.target.value)} />
+                   <input type="text" placeholder="Mã phòng thi" className="w-full p-6 rounded-2xl bg-slate-900 text-white text-center font-black text-2xl tracking-widest placeholder:text-slate-600 uppercase" value={examCodeInput} onChange={e => setExamCodeInput(e.target.value)} />
                 </div>
-                {submissions.filter(s => s.exam_id === currentExam.id).length === 0 && (
-                  <div className="p-20 text-center text-slate-400 font-bold flex flex-col items-center gap-4">
-                    <Users size={32} className="text-slate-200"/>
-                    Chưa có kết quả nào được ghi nhận.
-                  </div>
-                )}
+                <button onClick={async () => {
+                   if(!studentName || !className || !examCodeInput) return alert("Điền đủ thông tin em nhé!");
+                   const { data } = await supabase.from('exams').select('*').eq('exam_code', examCodeInput.toUpperCase()).single();
+                   if(data?.is_open) { setCurrentExam(data); setMode(AppMode.STUDENT_EXAM); setTimer(0); } else alert("Mã sai hoặc phòng đã đóng!");
+                }} className="w-full bg-indigo-600 text-white py-6 rounded-3xl font-black text-xl hover:bg-indigo-700 shadow-xl transition-all">VÀO THI NGAY</button>
+             </div>
+          </div>
+        )}
+
+        {mode === AppMode.STUDENT_RESULT && currentSubmission && (
+          <div className="max-w-md mx-auto py-20 text-center animate-fade-in">
+             <div className="bg-white p-14 rounded-[64px] shadow-2xl border border-slate-50">
+                <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-8"><CheckCircle2 size={48}/></div>
+                <h2 className="text-3xl font-black mb-2 text-slate-800">Tuyệt vời!</h2>
+                <p className="text-slate-400 font-bold mb-10">Bài làm hybrid đã được nộp lên Cloud</p>
+                <div className="bg-slate-900 text-white p-10 rounded-[40px] mb-10 transform hover:scale-105 transition-transform">
+                   <div className="text-6xl font-black">{currentSubmission.score}<span className="text-2xl text-slate-500">/{currentSubmission.total}</span></div>
+                   <div className="text-[10px] font-black uppercase tracking-widest mt-2 text-slate-500">KẾT QUẢ TRẮC NGHIỆM</div>
+                   <div className="mt-4 text-[10px] text-emerald-400 font-bold">PHẦN TỰ LUẬN ĐÃ ĐƯỢC LƯU LẠI</div>
+                </div>
+                <button onClick={() => window.location.reload()} className="w-full py-4 text-slate-400 font-bold hover:text-slate-900 transition-colors">VỀ TRANG CHỦ</button>
              </div>
           </div>
         )}

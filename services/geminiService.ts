@@ -1,20 +1,9 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  let apiKey = '';
-  try {
-    apiKey = (process.env as any).API_KEY || '';
-  } catch (e) {
-    apiKey = '';
-  }
-
-  if (!apiKey) {
-    throw new Error("Không tìm thấy cấu hình API_KEY. Vui lòng kiểm tra lại Environment Variables trên Vercel.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Fix: Strictly following SDK guidelines to use process.env.API_KEY directly for initialization
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   try {
     const response = await ai.models.generateContent({

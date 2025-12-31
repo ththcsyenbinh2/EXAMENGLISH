@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AppMode, Exam, Question, StudentSubmission } from './types';
 import { extractQuestionsFromText } from './services/geminiService';
@@ -6,7 +5,9 @@ import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/su
 import { 
   GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
   Database, Lock, Unlock, FileText, RefreshCw, CheckCircle2, 
-  CloudLightning, Settings, ServerCrash, ClipboardList, Info, Save
+  CloudLightning, Settings, ServerCrash, ClipboardList, Info, Save, XCircle, AlertCircle, Terminal,
+  // Fix: Added missing AlertTriangle icon to resolve compilation errors
+  AlertTriangle
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -19,7 +20,6 @@ const App: React.FC = () => {
   const [loadingStep, setLoadingStep] = useState('');
   const [dbError, setDbError] = useState<string | null>(null);
   
-  // Cấu hình Database thủ công
   const [showSetup, setShowSetup] = useState(false);
   const [inputUrl, setInputUrl] = useState('');
   const [inputKey, setInputKey] = useState('');
@@ -65,28 +65,38 @@ const App: React.FC = () => {
     setIsDbLoading(true);
     setDbError(null);
     try {
-      const { data: exData, error: exErr } = await supabase.from('exams').select('*').order('created_at', { ascending: false });
+      // Truy vấn sạch: Tuyệt đối không select(*)
+      const { data: exData, error: exErr } = await supabase
+        .from('exams')
+        .select('id, exam_code, title, questions, is_open, created_at')
+        .order('created_at', { ascending: false });
+      
       if (exErr) throw exErr;
       setExams(exData || []);
       
-      const { data: subData, error: subErr } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false });
+      const { data: subData, error: subErr } = await supabase
+        .from('submissions')
+        .select('id, exam_id, student_name, class_name, answers, score, total, submitted_at, time_spent')
+        .order('submitted_at', { ascending: false });
+        
       if (subErr) throw subErr;
       setSubmissions(subData || []);
     } catch (e: any) {
-      setDbError(e.message || "Lỗi kết nối. Vui lòng kiểm tra lại URL/Key.");
+      console.error("Fetch Error:", e);
+      setDbError(e.message);
     } finally {
       setIsDbLoading(false);
     }
   };
 
   const handleSaveConfig = () => {
-    if (!inputUrl.startsWith('https://') || inputKey.length < 20) {
-      alert("Thông tin cấu hình không hợp lệ. Vui lòng kiểm tra lại!");
+    if (!inputUrl.trim().startsWith('https://') || inputKey.trim().length < 20) {
+      alert("Thông tin cấu hình không hợp lệ. Vui lòng kiểm tra lại URL và Anon Key!");
       return;
     }
-    localStorage.setItem('ST_SUPABASE_URL', inputUrl);
-    localStorage.setItem('ST_SUPABASE_ANON_KEY', inputKey);
-    alert("Cấu hình đã được lưu! Ứng dụng sẽ tải lại.");
+    localStorage.setItem('ST_SUPABASE_URL', inputUrl.trim());
+    localStorage.setItem('ST_SUPABASE_ANON_KEY', inputKey.trim());
+    alert("Cấu hình Database đã được lưu thành công!");
     window.location.reload();
   };
 
@@ -100,6 +110,7 @@ const App: React.FC = () => {
       const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
       setLoadingStep('AI đang bóc tách đề...');
       const extracted = await extractQuestionsFromText(result.value);
+      
       const newExam: Exam = {
         id: Math.random().toString(36).substring(2, 11),
         exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
@@ -108,6 +119,7 @@ const App: React.FC = () => {
         is_open: true,
         created_at: new Date().toISOString()
       };
+      
       setCurrentExam(newExam);
       setMode(AppMode.EXAM_SETUP);
     } catch (error: any) {
@@ -121,13 +133,26 @@ const App: React.FC = () => {
     if (!currentExam) return;
     setIsDbLoading(true);
     try {
-      const { error } = await supabase.from('exams').insert([currentExam]);
+      // Đảm bảo Payload 100% không chứa 'description'
+      const payload = {
+        id: currentExam.id,
+        exam_code: currentExam.exam_code,
+        title: currentExam.title,
+        questions: currentExam.questions,
+        is_open: currentExam.is_open,
+        created_at: currentExam.created_at
+      };
+
+      const { error } = await supabase.from('exams').insert([payload]);
       if (error) throw error;
+      
       await fetchInitialData();
-      alert("Đã lưu đề thi thành công!");
+      alert("Đã lưu đề thi lên Cloud thành công!");
       setMode(AppMode.TEACHER_DASHBOARD);
     } catch (error: any) {
-      alert("Lỗi: " + error.message);
+      console.error("Insert Error:", error);
+      setDbError(error.message);
+      alert("Lỗi lưu trữ: Cấu hình Database đang bị kẹt Cache.\n\nVui lòng xem hướng dẫn sửa lỗi (màu vàng) trong phần Cài đặt.");
     } finally {
       setIsDbLoading(false);
     }
@@ -139,66 +164,73 @@ const App: React.FC = () => {
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  // Màn hình Setup thủ công
   if (showSetup) {
     const currentCfg = getSupabaseConfig();
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-2xl w-full bg-white p-10 md:p-14 rounded-[48px] shadow-2xl border border-indigo-100 animate-fade-in">
-          <div className="flex items-center gap-4 mb-8">
-            <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg shadow-indigo-200">
-              <Database size={32}/>
+        <div className="max-w-2xl w-full bg-white p-8 md:p-12 rounded-[40px] shadow-2xl border border-indigo-100 animate-fade-in overflow-hidden relative">
+          <div className="flex items-center gap-4 mb-6">
+            <div className="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg">
+              <Database size={28}/>
             </div>
             <div>
-              <h2 className="text-3xl font-black text-slate-800 tracking-tight">Cấu hình Cloud</h2>
-              <p className="text-slate-400 font-bold text-sm">Kết nối với Database Supabase của bạn</p>
+              <h2 className="text-2xl font-black text-slate-800">Cấu hình Database</h2>
+              <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Supabase Integration</p>
             </div>
           </div>
 
-          <div className="bg-amber-50 border border-amber-100 p-6 rounded-3xl mb-10 flex gap-4">
-            <Info className="text-amber-500 shrink-0" size={24}/>
-            <p className="text-amber-700 text-sm font-medium leading-relaxed">
-              Nhập URL và Anon Key từ Supabase Project Settings > API để bắt đầu.
+          <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-3xl mb-8">
+            <div className="flex items-center gap-3 mb-3 text-amber-600 font-black uppercase text-[10px] tracking-widest">
+               {/* Fix: Using AlertTriangle component which is now imported */}
+               <AlertTriangle size={18}/> HƯỚNG DẪN SỬA LỖI SCHEMA CACHE
+            </div>
+            <p className="text-amber-900 text-sm font-medium leading-relaxed mb-4">
+              Nếu bạn thấy lỗi <b>"Could not find 'description' column"</b>, hãy làm theo các bước sau:
             </p>
+            <ol className="text-amber-800 text-xs space-y-2 list-decimal ml-4 font-bold">
+              <li>Mở <b>SQL Editor</b> trong Supabase Dashboard.</li>
+              <li>Dán dòng lệnh này: <code className="bg-white/60 px-2 py-0.5 rounded font-mono">NOTIFY pgrst, 'reload schema';</code></li>
+              <li>Nhấn <b>Run</b> để làm mới bộ nhớ đệm của Database.</li>
+            </ol>
           </div>
 
-          <div className="space-y-6 mb-10">
+          <div className="space-y-4 mb-8">
             <div>
-              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">SUPABASE URL</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Project URL</label>
               <input 
                 type="text" 
-                placeholder="https://xxx.supabase.co" 
-                className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold text-slate-700 transition-all"
+                placeholder="https://abcxyz.supabase.co" 
+                className="w-full p-4 rounded-xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold text-slate-700 transition-all"
                 value={inputUrl || currentCfg.url}
                 onChange={e => setInputUrl(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">SUPABASE ANON KEY</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Anon Key (API Key)</label>
               <textarea 
-                placeholder="Nhập chuỗi Anon Key dài..." 
-                className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold text-slate-700 h-32 transition-all"
+                placeholder="Dán Anon Key tại đây..." 
+                className="w-full p-4 rounded-xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold text-slate-700 h-24 transition-all"
                 value={inputKey || currentCfg.key}
                 onChange={e => setInputKey(e.target.value)}
               />
             </div>
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col md:flex-row gap-3">
             <button 
               onClick={handleSaveConfig}
-              className="flex-1 bg-indigo-600 text-white py-5 rounded-[24px] font-black text-lg shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 hover:bg-indigo-700 transition-all active:scale-95"
+              className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-lg shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
             >
-              <Save size={24}/> LƯU CẤU HÌNH
+              <Save size={20}/> LƯU CẤU HÌNH
             </button>
             <button 
               onClick={() => {
                 if(isSupabaseConfigured()) setShowSetup(false);
-                else alert("Vui lòng cấu hình trước khi tiếp tục!");
+                else alert("Vui lòng cấu hình Database để tiếp tục!");
               }}
-              className="px-10 py-5 rounded-[24px] font-black text-slate-400 border border-slate-100 hover:bg-slate-50 transition-all"
+              className="px-8 py-4 rounded-2xl font-black text-slate-400 border border-slate-100 hover:bg-slate-50 transition-all"
             >
-              Bỏ qua
+              Quay lại
             </button>
           </div>
         </div>
@@ -216,14 +248,20 @@ const App: React.FC = () => {
             </div>
             <div>
               <span className="text-xl font-black tracking-tight block leading-none">Smart<span className="text-indigo-600">English</span></span>
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5 block">Cloud Connected</span>
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5 block">Online Exam Cloud</span>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
+            {dbError && (
+              <button onClick={() => setShowSetup(true)} className="flex items-center gap-2 bg-red-50 text-red-500 px-4 py-2 rounded-xl text-xs font-black border border-red-100 hover:bg-red-100 transition-colors">
+                {/* Fix: Using AlertTriangle component which is now imported */}
+                <AlertTriangle size={14}/> LỖI SCHEMA - XEM CÁCH SỬA
+              </button>
+            )}
             <button onClick={() => setShowSetup(true)} className="p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-400 hover:text-indigo-600 flex items-center gap-2">
               <Settings size={20}/>
-              <span className="hidden md:block text-xs font-black">Cài đặt DB</span>
+              <span className="hidden md:block text-xs font-black">Cài đặt</span>
             </button>
             <button onClick={fetchInitialData} className="p-2.5 hover:bg-slate-100 rounded-xl transition-all text-slate-400">
               <RefreshCw size={20} className={isDbLoading ? 'animate-spin' : ''}/>
@@ -235,10 +273,10 @@ const App: React.FC = () => {
       <main className="py-8 px-6 max-w-7xl mx-auto">
         {isProcessing && (
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center p-6 text-center">
-            <div className="bg-white p-12 rounded-[48px] shadow-2xl max-w-lg w-full">
-               <CloudLightning size={48} className="text-indigo-600 animate-pulse mx-auto mb-6"/>
+            <div className="bg-white p-12 rounded-[48px] shadow-2xl max-w-lg w-full scale-in">
+               <CloudLightning size={48} className="text-indigo-600 animate-bounce mx-auto mb-6"/>
                <h2 className="text-2xl font-black mb-2">{loadingStep}</h2>
-               <p className="text-slate-400 font-bold">AI đang thực hiện bóc tách đề...</p>
+               <p className="text-slate-400 font-bold">AI đang làm việc, vui lòng chờ...</p>
             </div>
           </div>
         )}
@@ -259,7 +297,7 @@ const App: React.FC = () => {
 
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {exams.map(exam => (
-                  <div key={exam.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
+                  <div key={exam.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden flex flex-col min-h-[280px]">
                     <div className="flex justify-between items-center mb-6">
                       <span className="bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">MÃ: {exam.exam_code}</span>
                       <button 
@@ -273,13 +311,13 @@ const App: React.FC = () => {
                       </button>
                     </div>
                     <h3 className="text-xl font-black text-slate-800 mb-6 line-clamp-2 h-14 group-hover:text-indigo-600 transition-colors">{exam.title}</h3>
-                    <div className="flex gap-2">
-                       <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold text-sm hover:bg-black transition-colors">Xem Điểm</button>
+                    <div className="flex gap-2 mt-auto">
+                       <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-bold text-sm hover:bg-black transition-colors">Bảng điểm</button>
                        <button onClick={() => {
                           const link = `${window.location.origin}${window.location.pathname}#hocsinh`;
                           navigator.clipboard.writeText(link);
                           alert("Đã copy link học sinh!");
-                       }} className="p-4 bg-white border border-slate-100 text-indigo-600 rounded-2xl hover:bg-indigo-50 transition-colors"><Share2 size={20}/></button>
+                       }} className="p-4 bg-white border border-slate-100 text-indigo-600 rounded-2xl hover:bg-indigo-50 transition-colors" title="Copy link thi"><Share2 size={20}/></button>
                        <button 
                         onClick={async () => {
                           if(confirm("Xóa vĩnh viễn đề này khỏi Cloud?")) {
@@ -288,6 +326,7 @@ const App: React.FC = () => {
                           }
                         }}
                         className="p-4 bg-red-50 text-red-500 rounded-2xl hover:bg-red-100 transition-colors"
+                        title="Xóa đề"
                        >
                         <Trash2 size={20}/>
                        </button>
@@ -296,7 +335,8 @@ const App: React.FC = () => {
                 ))}
                 {exams.length === 0 && !isDbLoading && (
                   <div className="col-span-full py-20 text-center bg-slate-50 rounded-[48px] border-2 border-dashed border-slate-200">
-                    <p className="text-slate-400 font-bold">Chưa có đề thi nào trên Cloud. Hãy tải file Word lên!</p>
+                    <ClipboardList size={48} className="text-slate-200 mx-auto mb-4"/>
+                    <p className="text-slate-400 font-bold">Chưa có đề thi nào trên Cloud. Tải file Word ngay!</p>
                   </div>
                 )}
              </div>
@@ -309,21 +349,24 @@ const App: React.FC = () => {
                 <div className="absolute top-0 left-0 w-full h-3 bg-indigo-600"></div>
                 <h2 className="text-3xl font-black text-center mb-10 tracking-tight text-slate-800">Phòng thi Online</h2>
                 <div className="space-y-4 mb-10">
-                  <input type="text" placeholder="Họ và tên" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold" value={studentName} onChange={e => setStudentName(e.target.value)} />
+                  <input type="text" placeholder="Họ và tên học sinh" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold" value={studentName} onChange={e => setStudentName(e.target.value)} />
                   <input type="text" placeholder="Lớp" className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 outline-none font-bold" value={className} onChange={e => setClassName(e.target.value)} />
-                  <input type="text" placeholder="MÃ PHÒNG" className="w-full p-6 rounded-3xl bg-indigo-50 border-2 border-indigo-200 text-center font-black text-indigo-600 uppercase text-3xl tracking-widest" value={examCodeInput} onChange={e => setExamCodeInput(e.target.value)} />
+                  <div className="pt-4 border-t border-slate-100 mt-6">
+                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 text-center">Mã phòng từ giáo viên</label>
+                    <input type="text" placeholder="ABCXYZ" className="w-full p-6 rounded-3xl bg-indigo-50 border-2 border-indigo-200 text-center font-black text-indigo-600 uppercase text-3xl tracking-widest" value={examCodeInput} onChange={e => setExamCodeInput(e.target.value)} />
+                  </div>
                 </div>
                 <button onClick={async () => {
                    if(!studentName || !className || !examCodeInput) return alert("Vui lòng điền đủ thông tin!");
                    setIsDbLoading(true);
-                   const { data, error } = await supabase.from('exams').select('*').eq('exam_code', examCodeInput.toUpperCase()).single();
+                   const { data, error } = await supabase.from('exams').select('id, is_open, questions, title').eq('exam_code', examCodeInput.toUpperCase()).single();
                    if(data && data.is_open) {
-                      setCurrentExam(data); setStudentAnswers({}); setTimer(0); setMode(AppMode.STUDENT_EXAM);
+                      setCurrentExam(data as any); setStudentAnswers({}); setTimer(0); setMode(AppMode.STUDENT_EXAM);
                    } else {
-                      alert("Mã phòng không chính xác hoặc phòng thi đang tạm đóng!");
+                      alert("Mã phòng sai hoặc phòng thi đã đóng!");
                    }
                    setIsDbLoading(false);
-                }} className="w-full bg-indigo-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl hover:bg-indigo-700 transition-all active:scale-95">VÀO THI NGAY</button>
+                }} className="w-full bg-indigo-600 text-white py-6 rounded-3xl font-black text-xl shadow-xl hover:bg-indigo-700 transition-all active:scale-95">BẮT ĐẦU THI</button>
              </div>
           </div>
         )}
@@ -336,11 +379,12 @@ const App: React.FC = () => {
                   <h2 className="font-black text-slate-800 truncate max-w-[200px]">{currentExam.title}</h2>
                 </div>
                 <div className="bg-indigo-50 px-6 py-2.5 rounded-2xl font-black text-indigo-600 text-2xl tabular-nums">
+                  <Clock size={20} className="inline mr-2 mb-1"/>
                   {formatTime(timer)}
                 </div>
              </div>
              {currentExam.questions.map((q, idx) => (
-                <div key={q.id} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+                <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
                    <p className="text-xl font-bold text-slate-800 mb-8"><span className="text-indigo-600 mr-2">Câu {idx+1}:</span> {q.prompt}</p>
                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {q.options.map((opt, oIdx) => (
@@ -374,41 +418,43 @@ const App: React.FC = () => {
         {mode === AppMode.STUDENT_RESULT && currentSubmission && (
            <div className="max-w-md mx-auto py-12 text-center animate-fade-in">
               <div className="bg-white p-14 rounded-[64px] shadow-2xl border border-slate-50">
-                 <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-8"><Trophy size={48}/></div>
+                 <div className="w-24 h-24 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-8"><Trophy size={48} className="animate-bounce"/></div>
                  <h2 className="text-4xl font-black mb-4 text-slate-800">Hoàn thành!</h2>
-                 <p className="text-slate-400 font-bold mb-10">Điểm số của bạn đã được ghi nhận</p>
-                 <div className="bg-indigo-50 p-10 rounded-[40px] mb-10">
+                 <p className="text-slate-400 font-bold mb-10">Kết quả của bạn đã được ghi nhận</p>
+                 <div className="bg-indigo-50 p-10 rounded-[40px] mb-10 transform hover:scale-105 transition-transform">
                     <div className="text-6xl font-black text-indigo-600">{currentSubmission.score}<span className="text-2xl text-indigo-300">/{currentSubmission.total}</span></div>
                     <div className="text-xs font-black text-indigo-400 uppercase tracking-widest mt-2">Câu đúng</div>
                  </div>
-                 <button onClick={() => window.location.reload()} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-black transition-all">Về Trang Chủ</button>
+                 <button onClick={() => window.location.reload()} className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-black transition-all">Kết thúc</button>
               </div>
            </div>
         )}
 
         {mode === AppMode.EXAM_SETUP && currentExam && (
           <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
-             <div className="bg-white p-10 rounded-[48px] shadow-xl flex flex-col md:flex-row justify-between items-center gap-8 border border-emerald-100">
+             <div className="bg-white p-10 rounded-[48px] shadow-xl flex flex-col md:flex-row justify-between items-center gap-8 border border-emerald-100 sticky top-24 z-50 backdrop-blur-md bg-white/90">
                 <div className="text-center md:text-left">
                   <h2 className="text-3xl font-black mb-2 text-emerald-600">AI đã sẵn sàng!</h2>
-                  <p className="text-slate-500 font-medium">Vui lòng kiểm tra lại nội dung trước khi xuất bản mã phòng.</p>
+                  <p className="text-slate-500 font-medium">Bản thảo đề thi vừa bóc tách. Nhấn Lưu Cloud để xuất bản.</p>
                 </div>
-                <button onClick={saveExamToCloud} className="w-full md:w-auto bg-indigo-600 text-white px-12 py-5 rounded-[28px] font-black text-xl shadow-xl hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-3">
-                  <Save size={24}/> LƯU ĐỀ CLOUD
+                <button onClick={saveExamToCloud} className="w-full md:w-auto bg-indigo-600 text-white px-12 py-5 rounded-[28px] font-black text-xl shadow-xl hover:bg-indigo-700 transition-all active:scale-95 flex items-center gap-3 justify-center">
+                  <Save size={24}/> LƯU CLOUD
                 </button>
              </div>
-             {currentExam.questions.map((q, idx) => (
-                <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
-                   <p className="font-bold text-lg mb-6 text-slate-800"><span className="text-indigo-600 mr-2">Câu {idx+1}:</span> {q.prompt}</p>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {q.options.map((opt, oIdx) => (
-                        <div key={oIdx} className={`p-4 rounded-xl border-2 font-bold ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-slate-50 border-transparent text-slate-400'}`}>
-                           <span className="mr-2">{String.fromCharCode(65+oIdx)}.</span> {opt}
-                        </div>
-                      ))}
-                   </div>
-                </div>
-             ))}
+             <div className="space-y-6">
+                {currentExam.questions.map((q, idx) => (
+                  <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
+                     <p className="font-bold text-lg mb-6 text-slate-800"><span className="text-indigo-600 mr-2">Câu {idx+1}:</span> {q.prompt}</p>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {q.options.map((opt, oIdx) => (
+                          <div key={oIdx} className={`p-4 rounded-xl border-2 font-bold ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-slate-50 border-transparent text-slate-400'}`}>
+                             <span className="mr-2">{String.fromCharCode(65+oIdx)}.</span> {opt}
+                          </div>
+                        ))}
+                     </div>
+                  </div>
+                ))}
+             </div>
           </div>
         )}
 
@@ -416,33 +462,43 @@ const App: React.FC = () => {
           <div className="space-y-8 animate-fade-in pb-20">
              <div className="flex items-center gap-4">
                 <button onClick={() => setMode(AppMode.TEACHER_DASHBOARD)} className="p-4 bg-white rounded-2xl shadow-sm text-slate-400 hover:text-indigo-600 transition-all border border-slate-100"><ArrowLeft size={24}/></button>
-                <h1 className="text-3xl font-black text-slate-800 tracking-tight">Bảng điểm: {currentExam.title}</h1>
+                <div>
+                  <h1 className="text-3xl font-black text-slate-800 tracking-tight">Bảng điểm chi tiết</h1>
+                  <p className="text-slate-400 font-bold">{currentExam.title}</p>
+                </div>
              </div>
              <div className="bg-white rounded-[48px] shadow-xl overflow-hidden border border-slate-100">
-                <table className="w-full text-left">
-                   <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      <tr>
-                        <th className="px-10 py-8">Học sinh</th>
-                        <th className="px-10 py-8">Lớp</th>
-                        <th className="px-10 py-8 text-center">Kết quả</th>
-                        <th className="px-10 py-8 text-center">Thời gian</th>
-                        <th className="px-10 py-8 text-right">Ngày thi</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-100">
-                      {submissions.filter(s => s.exam_id === currentExam.id).map(s => (
-                        <tr key={s.id} className="hover:bg-slate-50 transition-colors">
-                           <td className="px-10 py-7 font-black text-slate-800 text-lg">{s.student_name}</td>
-                           <td className="px-10 py-7 font-bold text-slate-500">{s.class_name}</td>
-                           <td className="px-10 py-7 text-center font-black text-indigo-600 text-2xl">{s.score} <span className="text-sm text-slate-300">/{s.total}</span></td>
-                           <td className="px-10 py-7 text-center font-bold text-slate-400">{formatTime(s.time_spent)}</td>
-                           <td className="px-10 py-7 text-right text-slate-400 text-xs font-bold">{new Date(s.submitted_at).toLocaleDateString('vi-VN')}</td>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                        <tr>
+                          <th className="px-10 py-8">Học sinh</th>
+                          <th className="px-10 py-8">Lớp</th>
+                          <th className="px-10 py-8 text-center">Kết quả</th>
+                          <th className="px-10 py-8 text-center">Thời gian</th>
+                          <th className="px-10 py-8 text-right">Ngày thi</th>
                         </tr>
-                      ))}
-                   </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {submissions.filter(s => s.exam_id === currentExam.id).map(s => (
+                          <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-10 py-7 font-black text-slate-800 text-lg">{s.student_name}</td>
+                            <td className="px-10 py-7 font-bold text-slate-500">{s.class_name}</td>
+                            <td className="px-10 py-7 text-center font-black text-indigo-600 text-2xl">{s.score} <span className="text-sm text-slate-300">/{s.total}</span></td>
+                            <td className="px-10 py-7 text-center font-bold text-slate-400 flex items-center justify-center gap-1">
+                              <Clock size={14}/> {formatTime(s.time_spent)}
+                            </td>
+                            <td className="px-10 py-7 text-right text-slate-400 text-xs font-bold">{new Date(s.submitted_at).toLocaleDateString('vi-VN')}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
                 {submissions.filter(s => s.exam_id === currentExam.id).length === 0 && (
-                  <div className="p-20 text-center text-slate-400 font-bold">Chưa có học sinh nào nộp bài.</div>
+                  <div className="p-20 text-center text-slate-400 font-bold flex flex-col items-center gap-4">
+                    <div className="bg-slate-50 p-6 rounded-full"><Users size={32} className="text-slate-200"/></div>
+                    Chưa có học sinh nào nộp bài thi này.
+                  </div>
                 )}
              </div>
           </div>

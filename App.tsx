@@ -1,11 +1,12 @@
+
 import React, { useState, useEffect } from 'react';
 import { AppMode, Exam, Question, StudentSubmission } from './types';
 import { extractQuestionsFromText, gradeEssayWithAI } from './services/geminiService';
 import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/supabase';
-import {
-  GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft,
-  Database, Settings, RefreshCw, CheckCircle2, CloudLightning,
-  ClipboardList, Info, Save, Activity, Eye, FileText, ChevronRight, XCircle, Loader2, Link2, Copy, Lock, Key, ToggleLeft, ToggleRight
+import { 
+  GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
+  Database, Settings, RefreshCw, CheckCircle2, CloudLightning, 
+  ClipboardList, Info, Save, Activity, Eye, FileText, ChevronRight, XCircle, Loader2, Link2, Copy, Lock, Key
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -16,7 +17,7 @@ const App: React.FC = () => {
   const [selectedSubmission, setSelectedSubmission] = useState<StudentSubmission | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
-
+  
   const [showSetup, setShowSetup] = useState(false);
   const [inputUrl, setInputUrl] = useState('');
   const [inputKey, setInputKey] = useState('');
@@ -33,9 +34,12 @@ const App: React.FC = () => {
   const configured = isSupabaseConfigured();
   const savedPasscode = localStorage.getItem('ST_ADMIN_PASSCODE') || '';
 
-  const isAdminAuthenticated = () => localStorage.getItem('ST_IS_ADMIN') === 'true';
-  const isStudentMode = mode === AppMode.STUDENT_ENTRY || mode === AppMode.STUDENT_EXAM || mode === AppMode.STUDENT_RESULT;
+  // Kiểm tra quyền truy cập giáo viên
+  const isAdminAuthenticated = () => {
+    return localStorage.getItem('ST_IS_ADMIN') === 'true';
+  };
 
+  // Tạo link mang theo cấu hình Database (Không bao gồm mật mã để an toàn)
   const getPortableLink = (hash: string = '') => {
     const { url, key } = getSupabaseConfig();
     const baseUrl = window.location.origin + window.location.pathname;
@@ -46,9 +50,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!configured) return;
     fetchInitialData();
-    const channel = supabase.channel('realtime-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: '*' }, () => fetchInitialData())
-      .subscribe();
+    const channel = supabase.channel('realtime-updates').on('postgres_changes', { event: '*', schema: 'public', table: '*' }, () => fetchInitialData()).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [configured]);
 
@@ -88,64 +90,33 @@ const App: React.FC = () => {
     }
   };
 
-const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  setIsProcessing(true);
-  setLoadingStep('AI đang bóc tách và nhận diện đáp án...');
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-
-    // Dùng mammoth để lấy text + định dạng (bold)
-    const { value: html, messages } = await (window as any).mammoth.convertToHtml(
-      { arrayBuffer },
-      { includeDefaultStyleMap: true }
-    );
-
-    // Gửi HTML này cho Gemini để phân tích (có giữ bold)
-    const extracted = await extractQuestionsFromHtmlWithBold(html);
-
-    const newExam: Exam = {
-      id: crypto.randomUUID(),
-      exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-      title: extracted.title || file.name.replace('.docx', ''),
-      questions: extracted.questions,
-      is_open: true,
-      created_at: new Date().toISOString()
-    };
-
-    setCurrentExam(newExam);
-    setMode(AppMode.EXAM_SETUP);
-  } catch (error: any) {
-    alert("Lỗi xử lý file: " + (error.message || "Không đọc được định dạng"));
-  } finally {
-    setIsProcessing(false);
-  }
-};
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsProcessing(true);
+    setLoadingStep('AI đang bóc tách nội dung Word...');
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
+      const extracted = await extractQuestionsFromText(result.value);
+      setCurrentExam({ id: crypto.randomUUID(), exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(), title: extracted.title, questions: extracted.questions, is_open: true, created_at: new Date().toISOString() });
+      setMode(AppMode.EXAM_SETUP);
+    } catch (error: any) { alert(error.message); }
+    finally { setIsProcessing(false); }
+  };
 
   const deleteExam = async (id: string) => {
-    if (!confirm("Xóa đề này và tất cả bài làm của học sinh?")) return;
+    if(!confirm("Xóa đề này và tất cả kết quả học sinh?")) return;
     setIsProcessing(true);
     setLoadingStep("Đang xóa dữ liệu...");
     try {
       await supabase.from('submissions').delete().eq('exam_id', id);
       await supabase.from('exams').delete().eq('id', id);
-      await fetchInitialData();
-      alert("Đã xóa thành công!");
+      fetchInitialData();
     } catch (e: any) {
       alert("Lỗi khi xóa: " + e.message);
     } finally {
       setIsProcessing(false);
-    }
-  };
-
-  const toggleExamOpen = async (exam: Exam) => {
-    const newStatus = !exam.is_open;
-    try {
-      await supabase.from('exams').update({ is_open: newStatus }).eq('id', exam.id);
-      await fetchInitialData();
-    } catch (e) {
-      alert("Lỗi cập nhật trạng thái đề!");
     }
   };
 
@@ -159,22 +130,24 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   };
 
   const handleStudentSubmit = async () => {
-    if (!currentExam) return;
-    if (!confirm("Xác nhận nộp bài?")) return;
+    if(!currentExam) return;
+    if(!confirm("Xác nhận nộp bài?")) return;
+
     setIsProcessing(true);
     setLoadingStep('AI đang chấm điểm bài làm...');
+
     try {
       let mcqScore = 0;
       let essayScore = 0;
       const finalAnswers: Record<string, any> = {};
-
+      
       for (const q of currentExam.questions) {
         const studentAns = studentAnswers[q.id];
-
+        
         if (q.type === 'mcq') {
           const isCorrect = studentAns === q.correctAnswerIndex;
-          if (isCorrect) mcqScore += 1;
-          finalAnswers[q.id] = { value: studentAns, type: 'mcq', correct: isCorrect };
+          if (isCorrect) mcqScore++;
+          finalAnswers[q.id] = { value: studentAns, type: 'mcq' };
         } else {
           const score = studentAns ? await gradeEssayWithAI(q.prompt, studentAns, q.sampleAnswer || "") : 0;
           essayScore += score;
@@ -182,16 +155,16 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         }
       }
 
-      const payload = {
-        id: crypto.randomUUID(),
-        exam_id: currentExam.id,
-        student_name: studentName,
-        class_name: className,
-        answers: finalAnswers,
-        score: mcqScore + essayScore,
-        total: currentExam.questions.length,
-        time_spent: timer,
-        submitted_at: new Date().toISOString()
+      const payload = { 
+        id: crypto.randomUUID(), 
+        exam_id: currentExam.id, 
+        student_name: studentName, 
+        class_name: className, 
+        answers: finalAnswers, 
+        score: mcqScore + essayScore, 
+        total: currentExam.questions.length, 
+        time_spent: timer, 
+        submitted_at: new Date().toISOString() 
       };
 
       await supabase.from('submissions').insert([payload]);
@@ -204,6 +177,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     }
   };
 
+  // UI CHO CÀI ĐẶT (SETUP)
   if (showSetup) {
     const currentCfg = getSupabaseConfig();
     return (
@@ -231,17 +205,18 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
               <p className="text-[10px] text-slate-400 mt-2 px-1 italic">Mật mã này dùng để vào trang quản trị. Đừng cho học sinh biết mã này!</p>
             </div>
           </div>
-          <button onClick={() => {
-            localStorage.setItem('ST_SUPABASE_URL', inputUrl.trim());
-            localStorage.setItem('ST_SUPABASE_ANON_KEY', inputKey.trim());
+          <button onClick={() => { 
+            localStorage.setItem('ST_SUPABASE_URL', inputUrl.trim()); 
+            localStorage.setItem('ST_SUPABASE_ANON_KEY', inputKey.trim()); 
             if (inputPasscode) localStorage.setItem('ST_ADMIN_PASSCODE', inputPasscode.trim());
-            window.location.reload();
+            window.location.reload(); 
           }} className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg shadow-xl">LƯU THIẾT LẬP</button>
         </div>
       </div>
     );
   }
 
+  // UI CHO ĐĂNG NHẬP GIÁO VIÊN
   if (mode === AppMode.ADMIN_LOGIN) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
@@ -252,11 +227,11 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           <h2 className="text-3xl font-black text-slate-800 mb-2">Khu vực Giáo viên</h2>
           <p className="text-slate-400 font-medium mb-10">Vui lòng nhập mật mã để tiếp tục</p>
           <div className="relative mb-8">
-            <input
-              type="password"
-              placeholder="••••••"
-              className="w-full p-6 pl-14 rounded-3xl bg-slate-100 border-2 border-transparent focus:border-indigo-600 outline-none font-black text-3xl tracking-[1em] text-center"
-              value={loginPasscode}
+            <input 
+              type="password" 
+              placeholder="••••••" 
+              className="w-full p-6 pl-14 rounded-3xl bg-slate-100 border-2 border-transparent focus:border-indigo-600 outline-none font-black text-3xl tracking-[1em] text-center" 
+              value={loginPasscode} 
               onChange={e => setLoginPasscode(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleAdminLogin()}
             />
@@ -272,22 +247,26 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     );
   }
 
+  // BIẾN KIỂM TRA ĐANG Ở CHẾ ĐỘ HỌC SINH
+  const isStudentMode = mode === AppMode.STUDENT_ENTRY || mode === AppMode.STUDENT_EXAM || mode === AppMode.STUDENT_RESULT;
+
   return (
     <div className="min-h-screen bg-[#FDFDFF] text-slate-900 font-['Inter']">
+      {/* Header - Chỉ hiện công cụ quản trị nếu không phải chế độ học sinh */}
       <header className="bg-white/80 border-b border-slate-100 py-4 px-6 sticky top-0 z-[100] backdrop-blur-md">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => { localStorage.removeItem('ST_IS_ADMIN'); window.location.hash = ''; window.location.reload(); }}>
             <div className="bg-indigo-600 p-2.5 rounded-2xl text-white shadow-lg"><GraduationCap size={24}/></div>
             <span className="text-xl font-black text-slate-900">Edu<span className="text-indigo-600">Cloud</span></span>
           </div>
-         
+          
           {!isStudentMode && (
             <div className="flex items-center gap-3">
-               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(getPortableLink());
-                  alert("Đã copy Link Quản trị! Lưu ý: Máy mới vẫn sẽ yêu cầu mật mã để vào được đây.");
-                }}
+               <button 
+                onClick={() => { 
+                  navigator.clipboard.writeText(getPortableLink()); 
+                  alert("Đã copy Link Quản trị! Lưu ý: Máy mới vẫn sẽ yêu cầu mật mã để vào được đây."); 
+                }} 
                 className="bg-slate-900 text-white px-5 py-2.5 rounded-xl text-xs font-black flex items-center gap-2"
                >
                  <Copy size={14}/> LINK QUẢN TRỊ
@@ -298,6 +277,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           )}
         </div>
       </header>
+
       <main className="py-8 px-6 max-w-7xl mx-auto">
         {isProcessing && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center">
@@ -308,6 +288,8 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           </div>
         )}
+
+        {/* Dashboard Giáo viên */}
         {mode === AppMode.TEACHER_DASHBOARD && configured && (
           <div className="space-y-10 animate-fade-in">
              <div className="bg-gradient-to-br from-indigo-600 to-violet-700 p-12 rounded-[48px] text-white shadow-2xl flex flex-col md:flex-row justify-between items-center gap-8">
@@ -320,33 +302,32 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {exams.map(exam => (
                   <div key={exam.id} className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col min-h-[300px] hover:shadow-xl transition-all">
-                    <div className="flex justify-between items-start mb-6">
-                      <div>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-lg">PHÒNG: {exam.exam_code}</span>
-                      </div>
-                      <button
-                        onClick={() => toggleExamOpen(exam)}
-                        className={`p-2 rounded-xl transition-all ${exam.is_open ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}`}
-                      >
-                        {exam.is_open ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
-                      </button>
+                    <div className="flex justify-between items-center mb-6">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-lg">PHÒNG: {exam.exam_code}</span>
+                      <span className={`px-3 py-1 rounded-full text-[9px] font-black ${exam.is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-400'}`}>{exam.is_open ? 'ĐANG MỞ' : 'ĐÃ ĐÓNG'}</span>
                     </div>
                     <h3 className="text-xl font-black text-slate-800 mb-6 line-clamp-2 h-14 leading-tight">{exam.title}</h3>
                     <div className="mt-auto flex gap-2">
-                      <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">XEM BÀI LÀM</button>
-                      <button onClick={() => { navigator.clipboard.writeText(getPortableLink('#hocsinh')); alert("Đã copy link Học sinh!"); }} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600"><Share2 size={18}/></button>
-                      <button onClick={() => deleteExam(exam.id)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-red-500"><Trash2 size={18}/></button>
-                    </div>
-                    <div className="mt-4 text-center">
-                      <span className={`text-xs font-bold ${exam.is_open ? 'text-emerald-600' : 'text-red-500'}`}>
-                        {exam.is_open ? 'ĐANG MỞ CHO HỌC SINH' : 'ĐÃ KHÓA'}
-                      </span>
+                       <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">XEM BÀI LÀM</button>
+                       <button 
+                        onClick={() => { 
+                          const link = getPortableLink('#hocsinh');
+                          navigator.clipboard.writeText(link); 
+                          alert("Đã copy link Học sinh! Link này hoàn toàn an toàn, học sinh không thể xóa đề."); 
+                        }} 
+                        className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600"
+                       >
+                         <Share2 size={18}/>
+                       </button>
+                       <button onClick={() => deleteExam(exam.id)} className="p-4 bg-slate-50 text-slate-400 rounded-2xl hover:text-red-500"><Trash2 size={18}/></button>
                     </div>
                   </div>
                 ))}
              </div>
           </div>
         )}
+
+        {/* Xem bài làm học sinh (Admin only) */}
         {mode === AppMode.VIEW_SUBMISSIONS && currentExam && (
           <div className="max-w-6xl mx-auto space-y-8 animate-fade-in pb-20">
              <div className="flex justify-between items-center">
@@ -357,11 +338,12 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                 </div>
                 <div className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest border border-emerald-100 flex items-center gap-2"><Activity size={16} className="animate-pulse"/> Bảo mật</div>
              </div>
+
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-1 space-y-4 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
                    {submissions.filter(s => s.exam_id === currentExam.id).map(s => (
-                      <div
-                        key={s.id}
+                      <div 
+                        key={s.id} 
                         onClick={() => setSelectedSubmission(s)}
                         className={`p-6 rounded-3xl border-2 transition-all cursor-pointer ${selectedSubmission?.id === s.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl' : 'bg-white border-slate-50 hover:border-indigo-100'}`}
                       >
@@ -373,7 +355,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       </div>
                    ))}
                 </div>
-               
+                
                 <div className="lg:col-span-2 bg-white rounded-[48px] shadow-2xl border border-slate-100 p-12 overflow-y-auto max-h-[75vh] custom-scrollbar">
                    {selectedSubmission ? (
                      <div className="space-y-12 animate-fade-in">
@@ -387,13 +369,13 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                               <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Tổng điểm</div>
                            </div>
                         </div>
-                       
+                        
                         <div className="space-y-10">
                            {currentExam.questions.map((q, idx) => {
                              const ans = selectedSubmission.answers[q.id];
                              const studentValue = ans?.value;
                              const isCorrectMCQ = q.type === 'mcq' && studentValue === q.correctAnswerIndex;
-                            
+                             
                              return (
                                <div key={idx} className="bg-slate-50 p-8 rounded-[40px] border border-slate-100">
                                   <div className="flex justify-between items-start mb-6">
@@ -402,7 +384,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                                         {q.type === 'mcq' ? 'Trắc nghiệm' : 'Tự luận'}
                                      </span>
                                   </div>
-                                 
+                                  
                                   {q.type === 'mcq' ? (
                                     <div className="space-y-4">
                                        <div className={`p-6 rounded-3xl border-2 font-bold ${isCorrectMCQ ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
@@ -452,6 +434,8 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
              </div>
           </div>
         )}
+
+        {/* Giao diện Học sinh (Luôn ẩn công cụ quản trị) */}
         {mode === AppMode.STUDENT_ENTRY && (
           <div className="max-w-md mx-auto py-20 animate-fade-in">
              <div className="bg-white p-12 rounded-[64px] shadow-2xl text-center border border-slate-50">
@@ -475,6 +459,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
              </div>
           </div>
         )}
+
         {mode === AppMode.STUDENT_EXAM && currentExam && (
           <div className="max-w-3xl mx-auto space-y-8 animate-fade-in pb-32">
              <div className="bg-white/90 backdrop-blur-md p-6 rounded-3xl shadow-xl sticky top-24 z-50 flex justify-between items-center border border-slate-100">
@@ -502,6 +487,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
              <button onClick={handleStudentSubmit} className="w-full bg-emerald-500 text-white py-8 rounded-[40px] font-black text-3xl shadow-2xl hover:bg-emerald-600 transition-all">NỘP BÀI THI</button>
           </div>
         )}
+
         {mode === AppMode.STUDENT_RESULT && currentSubmission && (
           <div className="max-w-md mx-auto py-20 text-center animate-fade-in">
              <div className="bg-white p-16 rounded-[72px] shadow-2xl border border-slate-50">
@@ -516,76 +502,30 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
              </div>
           </div>
         )}
+
+        {/* Setup sau bóc tách */}
         {mode === AppMode.EXAM_SETUP && currentExam && (
           <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-20">
              <div className="bg-white/90 backdrop-blur-md p-10 rounded-[40px] shadow-xl border border-emerald-100 sticky top-24 z-50 flex justify-between items-center">
-                <div>
-                  <h2 className="text-3xl font-black text-emerald-600">Kiểm tra và chọn đáp án đúng</h2>
-                  <p className="text-slate-500 font-medium mt-2">Click vào lựa chọn đúng cho câu trắc nghiệm (sẽ hiện xanh).</p>
-                </div>
-                <button
-                  onClick={async () => {
-                    if (currentExam.questions.some(q => q.type === 'mcq' && q.correctAnswerIndex === null)) {
-                      if (!confirm("Có câu trắc nghiệm chưa chọn đáp án đúng. Vẫn lưu đề?")) return;
-                    }
-                    setIsProcessing(true);
-                    await supabase.from('exams').insert([currentExam]);
-                    await fetchInitialData();
-                    setMode(AppMode.TEACHER_DASHBOARD);
-                    setIsProcessing(false);
-                  }}
-                  className="bg-indigo-600 text-white px-10 py-5 rounded-3xl font-black text-xl shadow-lg hover:bg-indigo-700"
-                >
-                  LƯU & XUẤT BẢN
-                </button>
+                <div><h2 className="text-3xl font-black text-emerald-600">AI bóc tách thành công!</h2><p className="text-slate-500 font-medium">Vui lòng kiểm tra lại trước khi lưu.</p></div>
+                <button onClick={async () => { await supabase.from('exams').insert([currentExam]); fetchInitialData(); setMode(AppMode.TEACHER_DASHBOARD); }} className="bg-indigo-600 text-white px-10 py-5 rounded-3xl font-black text-xl shadow-lg">LƯU & XUẤT BẢN</button>
              </div>
              {currentExam.questions.map((q, idx) => (
-               <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm">
-                  <div className={`absolute top-0 right-0 px-6 py-2 rounded-bl-3xl text-[10px] font-black uppercase tracking-widest ${q.type === 'mcq' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>
-                    {q.type === 'mcq' ? 'Trắc nghiệm' : 'Tự luận'}
-                  </div>
-                  <p className="font-bold text-xl mb-8 pr-12">Câu {idx + 1}: {q.prompt}</p>
-
+               <div key={idx} className="bg-white p-10 rounded-[40px] border border-slate-100 shadow-sm relative overflow-hidden group">
+                  <div className={`absolute top-0 right-0 px-6 py-2 rounded-bl-3xl text-[10px] font-black uppercase tracking-widest ${q.type === 'mcq' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>{q.type === 'mcq' ? 'Trắc nghiệm' : 'Tự luận'}</div>
+                  <p className="font-bold text-xl mb-8 pr-12">Câu {idx+1}: {q.prompt}</p>
                   {q.type === 'mcq' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {q.options?.map((opt: string, oIdx: number) => (
-                        <button
-                          key={oIdx}
-                          onClick={() => {
-                            setCurrentExam({
-                              ...currentExam,
-                              questions: currentExam.questions.map((qq, i) =>
-                                i === idx ? { ...qq, correctAnswerIndex: oIdx } : qq
-                              )
-                            });
-                          }}
-                          className={`p-6 rounded-2xl border-2 font-bold text-left transition-all ${
-                            oIdx === q.correctAnswerIndex
-                              ? 'bg-emerald-500 border-emerald-600 text-white shadow-lg'
-                              : 'bg-slate-50 border-slate-200 hover:border-slate-400 text-slate-700'
-                          }`}
-                        >
-                          <span className="mr-3 text-lg">{String.fromCharCode(65 + oIdx)}.</span>
-                          {opt}
-                        </button>
-                      ))}
+                       {q.options?.map((opt, oIdx) => (
+                         <div key={oIdx} className={`p-5 rounded-2xl border-2 font-bold ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-slate-50 border-transparent text-slate-400'}`}>
+                           <span className="mr-3 opacity-40">{String.fromCharCode(65+oIdx)}.</span> {opt}
+                         </div>
+                       ))}
                     </div>
                   ) : (
-                    <div className="bg-emerald-50/50 p-6 rounded-2xl border border-emerald-100 font-medium text-emerald-900">
-                      <span className="text-[10px] font-black uppercase block mb-2 tracking-widest">Đáp án mẫu (dùng để AI chấm):</span>
-                      <textarea
-                        className="w-full p-4 bg-white rounded-xl border border-emerald-200 outline-none font-medium"
-                        rows={4}
-                        value={q.sampleAnswer || ''}
-                        onChange={(e) => {
-                          setCurrentExam({
-                            ...currentExam,
-                            questions: currentExam.questions.map((qq, i) =>
-                              i === idx ? { ...qq, sampleAnswer: e.target.value } : qq
-                            )
-                          });
-                        }}
-                      />
+                    <div className="bg-emerald-50/50 p-6 rounded-2xl border border-emerald-100 font-medium text-emerald-900 text-sm">
+                       <span className="text-[10px] font-black uppercase opacity-60 block mb-1 tracking-widest">Đáp án mẫu AI đề xuất:</span>
+                       {q.sampleAnswer || "N/A"}
                     </div>
                   )}
                </div>
@@ -593,7 +533,7 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
         )}
       </main>
-     
+      
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

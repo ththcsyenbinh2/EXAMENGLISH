@@ -3,18 +3,23 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  // Khởi tạo AI ngay trong hàm để luôn lấy API_KEY mới nhất từ môi trường
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("API_KEY chưa được thiết lập. Vui lòng kiểm tra Environment Variables.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Bạn là trợ lý giáo dục chuyên nghiệp. Hãy bóc tách các câu hỏi trắc nghiệm tiếng Anh từ văn bản sau.
+    contents: `Bạn là chuyên gia khảo thí tiếng Anh. Hãy bóc tách các câu hỏi trắc nghiệm từ văn bản sau.
     Yêu cầu:
-    1. Trích xuất tiêu đề đề thi phù hợp.
-    2. Với mỗi câu hỏi: nội dung (prompt), 4 lựa chọn (options) và vị trí đáp án đúng (correctAnswerIndex: 0-3).
-    3. Trả về định dạng JSON.
+    1. Xác định tiêu đề đề thi.
+    2. Với mỗi câu hỏi: trích xuất nội dung, 4 lựa chọn (A, B, C, D) và vị trí đáp án đúng (0-3).
+    3. Trả về định dạng JSON chuẩn.
     
-    NỘI DUNG:
+    VĂN BẢN:
     ${text}`,
     config: {
       responseMimeType: "application/json",
@@ -48,13 +53,13 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   try {
     const result = JSON.parse(response.text || '{}');
     return {
-      title: result.title || "Đề thi tiếng Anh mới",
+      title: result.title || "Đề thi mới",
       questions: (result.questions || []).map((q: any, idx: number) => ({
         ...q,
         id: `q-${idx}-${Date.now()}`
       }))
     };
   } catch (error) {
-    throw new Error("AI không thể đọc được cấu trúc đề thi. Vui lòng kiểm tra lại định dạng file Word.");
+    throw new Error("AI không thể phân tích văn bản này. Hãy kiểm tra lại file Word.");
   }
 };

@@ -1,20 +1,36 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Hàm lấy cấu hình từ nhiều nguồn: process.env -> localStorage
+// Hàm lấy cấu hình từ nhiều nguồn theo thứ tự ưu tiên
 export const getSupabaseConfig = () => {
   let url = '';
   let key = '';
 
   try {
-    // 1. Thử lấy từ process.env (Vercel/Build time)
-    url = (process.env as any).SUPABASE_URL || '';
-    key = (process.env as any).SUPABASE_ANON_KEY || '';
+    // 1. Ưu tiên cao nhất: Lấy từ URL (Portable Setup Link)
+    const params = new URLSearchParams(window.location.search);
+    const urlParam = params.get('s_url');
+    const keyParam = params.get('s_key');
 
-    // 2. Nếu trống, thử lấy từ localStorage (Runtime setup)
-    if (!url || !key) {
-      url = localStorage.getItem('ST_SUPABASE_URL') || '';
-      key = localStorage.getItem('ST_SUPABASE_ANON_KEY') || '';
+    if (urlParam && keyParam) {
+      url = decodeURIComponent(urlParam);
+      key = decodeURIComponent(keyParam);
+      // Tự động lưu vào máy để lần sau không cần URL nữa
+      localStorage.setItem('ST_SUPABASE_URL', url);
+      localStorage.setItem('ST_SUPABASE_ANON_KEY', key);
+      
+      // Xóa params trên URL cho sạch sẽ và bảo mật
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+    } else {
+      // 2. Thử lấy từ process.env (Dành cho bản Deploy chính thức)
+      url = (process.env as any).SUPABASE_URL || '';
+      key = (process.env as any).SUPABASE_ANON_KEY || '';
+
+      // 3. Cuối cùng mới lấy từ localStorage
+      if (!url || !key) {
+        url = localStorage.getItem('ST_SUPABASE_URL') || '';
+        key = localStorage.getItem('ST_SUPABASE_ANON_KEY') || '';
+      }
     }
   } catch (e) {
     console.error("Lỗi khi đọc cấu hình:", e);
@@ -32,7 +48,6 @@ export const isSupabaseConfigured = () => {
   );
 };
 
-// Cấu hình Proxy để khởi tạo client linh hoạt
 export const supabase = new Proxy({} as any, {
   get: (target, prop) => {
     const { url, key } = getSupabaseConfig();
@@ -40,7 +55,7 @@ export const supabase = new Proxy({} as any, {
     if (!isSupabaseConfigured()) {
       return () => {
         console.warn("Supabase chưa được cấu hình!");
-        return { data: null, error: { message: 'Chưa cấu hình Database. Vui lòng thiết lập trong phần Cài đặt.' } };
+        return { data: null, error: { message: 'Hệ thống chưa kết nối Cloud. Vui lòng thiết lập trong Cài đặt.' } };
       };
     }
 

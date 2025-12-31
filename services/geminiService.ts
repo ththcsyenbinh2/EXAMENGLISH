@@ -1,41 +1,41 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";  // Chỉ import GoogleGenAI
 import { Question } from "../types";
 
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  // Khởi tạo trực tiếp từ process.env.API_KEY theo quy định
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // SDK mới tự lấy từ env GEMINI_API_KEY, không cần truyền apiKey
+  const ai = new GoogleGenAI({});  
 
   const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
+    model: "gemini-3-flash-preview",  // Model này tồn tại và hỗ trợ tốt structured output
     contents: `Bạn là một chuyên gia khảo thí tiếng Anh cao cấp. Nhiệm vụ của bạn là bóc tách các câu hỏi trắc nghiệm từ văn bản được cung cấp.
     
     Yêu cầu:
     1. Trích xuất tiêu đề đề thi.
-    2. Với mỗi câu hỏi: Trích xuất nội dung câu hỏi (prompt), danh sách 4 lựa chọn (options), và chỉ số của đáp án đúng (correctAnswerIndex: từ 0 đến 3).
-    3. Trả về kết quả dưới định dạng JSON duy nhất, không kèm giải thích.
+    2. Với mỗi câu hỏi: Trích xuất nội dung câu hỏi (prompt), danh sách đúng 4 lựa chọn (options), và chỉ số của đáp án đúng (correctAnswerIndex: từ 0 đến 3).
+    3. Trả về đúng định dạng JSON, không kèm bất kỳ giải thích nào.
     
     NỘI DUNG VĂN BẢN:
     ${text}`,
     config: {
       responseMimeType: "application/json",
+      // Structured schema trong SDK mới dùng kiểu khác (không có Type)
       responseSchema: {
-        type: Type.OBJECT,
+        type: "OBJECT",
         properties: {
-          title: { type: Type.STRING },
+          title: { type: "STRING" },
           questions: {
-            type: Type.ARRAY,
+            type: "ARRAY",
             items: {
-              type: Type.OBJECT,
+              type: "OBJECT",
               properties: {
-                prompt: { type: Type.STRING },
+                prompt: { type: "STRING" },
                 options: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
+                  type: "ARRAY",
+                  items: { type: "STRING" },
                   minItems: 4,
                   maxItems: 4
                 },
-                correctAnswerIndex: { type: Type.INTEGER }
+                correctAnswerIndex: { type: "NUMBER" }  // NUMBER thay vì INTEGER
               },
               required: ["prompt", "options", "correctAnswerIndex"]
             }
@@ -47,7 +47,8 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   });
 
   try {
-    const result = JSON.parse(response.text || '{}');
+    const resultText = response.text?.();  // Trong SDK mới là response.text()
+    const result = JSON.parse(resultText || '{}');
     return {
       title: result.title || "Đề thi tiếng Anh",
       questions: (result.questions || []).map((q: any, idx: number) => ({

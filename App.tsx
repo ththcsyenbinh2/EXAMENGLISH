@@ -5,9 +5,9 @@ import { extractQuestionsFromText } from './services/geminiService';
 import { supabase } from './services/supabase';
 import { 
   GraduationCap, Plus, Share2, ChevronRight, Loader2, Trash2, 
-  Trophy, Clock, Send, Users, ArrowLeft, Download, Database,
+  Trophy, Clock, Users, ArrowLeft, Download, Database,
   Lock, Unlock, Search, UserCircle, School, BarChart3, PieChart,
-  UserCheck, AlertTriangle, TrendingUp
+  AlertTriangle, TrendingUp, RefreshCw
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -50,7 +50,7 @@ const App: React.FC = () => {
       const { data: subData } = await supabase.from('submissions').select('*').order('submitted_at', { ascending: false });
       if (subData) setSubmissions(subData);
     } catch (e) {
-      console.error("Database connection error:", e);
+      console.error("Lỗi kết nối database:", e);
     } finally {
       setIsDbLoading(false);
     }
@@ -59,15 +59,7 @@ const App: React.FC = () => {
   const classStats = useMemo(() => {
     if (!currentExam) return [];
     const examSubmissions = submissions.filter(s => (s as any).exam_id === currentExam.id);
-    
-    const statsMap: Record<string, { 
-      className: string, 
-      count: number, 
-      totalScore: number, 
-      maxScore: number,
-      minScore: number,
-      students: any[]
-    }> = {};
+    const statsMap: Record<string, any> = {};
 
     examSubmissions.forEach((s: any) => {
       const cls = s.class_name || "Chưa phân lớp";
@@ -80,7 +72,6 @@ const App: React.FC = () => {
       statsMap[cls].minScore = Math.min(statsMap[cls].minScore, s.score);
       statsMap[cls].students.push(s);
     });
-
     return Object.values(statsMap).sort((a, b) => a.className.localeCompare(b.className));
   }, [submissions, currentExam]);
 
@@ -139,16 +130,11 @@ const App: React.FC = () => {
       return;
     }
     setIsDbLoading(true);
-    const { data, error } = await supabase
-      .from('exams')
-      .select('*')
-      .eq('exam_code', examCodeInput.toUpperCase())
-      .single();
-
+    const { data, error } = await supabase.from('exams').select('*').eq('exam_code', examCodeInput.toUpperCase()).single();
     if (error || !data) {
       alert("Mã đề không tồn tại!");
     } else if (!data.is_open) {
-      alert("Đề thi này hiện đang ĐÓNG. Vui lòng liên hệ giáo viên!");
+      alert("Đề thi này hiện đang ĐÓNG!");
     } else {
       setCurrentExam(data);
       setStudentAnswers({});
@@ -164,7 +150,6 @@ const App: React.FC = () => {
     currentExam.questions.forEach(q => {
       if (studentAnswers[q.id] === q.correctAnswerIndex) score++;
     });
-
     const submission = {
       exam_id: currentExam.id,
       student_name: studentName,
@@ -174,7 +159,6 @@ const App: React.FC = () => {
       total: currentExam.questions.length,
       time_spent: timer
     };
-
     setIsDbLoading(true);
     const { data, error } = await supabase.from('submissions').insert([submission]).select().single();
     if (!error) {
@@ -203,7 +187,7 @@ const App: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
         <div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">Quản lý Đề thi</h1>
-          <p className="text-slate-500 font-medium">Theo dõi hoạt động và kết quả học tập của học sinh.</p>
+          <p className="text-slate-500 font-medium">Bản Cloud ổn định - Dữ liệu thời gian thực.</p>
         </div>
         <div className="flex gap-4">
           <button 
@@ -265,7 +249,7 @@ const App: React.FC = () => {
                     onClick={() => {
                       const url = `${window.location.origin}${window.location.pathname}#hocsinh`;
                       navigator.clipboard.writeText(url);
-                      alert("Gửi link này cho học sinh và cấp Mã đề: " + exam.exam_code);
+                      alert("Đã copy link học sinh! Mã đề: " + exam.exam_code);
                     }}
                     className="flex-1 flex items-center justify-center gap-2 bg-slate-50 text-slate-600 py-3.5 rounded-xl text-sm font-bold border border-slate-100"
                    >
@@ -323,8 +307,7 @@ const App: React.FC = () => {
             <div className="text-3xl font-black text-slate-900">
               {Math.round((examSubmissions.filter(s => (s as any).score >= (s as any).total / 2).length / (examSubmissions.length || 1)) * 100)}%
             </div>
-            {/* Fix: Escape special character >= by wrapping it in curly braces and a string */}
-            <div className="text-xs font-black text-slate-400 uppercase mt-1">{"Tỉ lệ đạt (>=5)"}</div>
+            <div className="text-xs font-black text-slate-400 uppercase mt-1">Tỉ lệ đạt ({"\u2265"}5)</div>
           </div>
         </div>
 
@@ -334,7 +317,7 @@ const App: React.FC = () => {
               <PieChart className="w-5 h-5 text-indigo-600"/> Thống kê theo lớp
             </h3>
             {classStats.map(stat => (
-              <div key={stat.className} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all cursor-default">
+              <div key={stat.className} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all">
                 <div className="flex justify-between items-center mb-4">
                   <span className="text-lg font-black text-indigo-600">Lớp {stat.className}</span>
                   <span className="text-xs font-bold text-slate-400 bg-slate-50 px-2 py-1 rounded-lg">{stat.count} bạn thi</span>
@@ -379,12 +362,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 ))}
-                {examSubmissions.length === 0 && (
-                  <div className="text-center py-20">
-                    <AlertTriangle className="w-12 h-12 text-slate-200 mx-auto mb-4"/>
-                    <p className="text-slate-400 font-bold">Chưa có học sinh nào nộp bài.</p>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -396,41 +373,33 @@ const App: React.FC = () => {
   const renderStudentEntry = () => (
     <div className="max-w-xl mx-auto p-6 py-10 animate-fade-in">
       <div className="bg-white p-10 rounded-[48px] shadow-2xl border border-slate-50 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -mr-16 -mt-16"></div>
-        <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl shadow-indigo-200 relative z-10">
+        <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-xl shadow-indigo-200">
           <GraduationCap className="w-10 h-10 text-white" />
         </div>
-        <h1 className="text-3xl font-black text-slate-900 text-center mb-10 relative z-10">Cổng Thi Trực Tuyến</h1>
-        
-        <div className="space-y-6 mb-10 relative z-10">
+        <h1 className="text-3xl font-black text-slate-900 text-center mb-10">Cổng Thi Trực Tuyến</h1>
+        <div className="space-y-6 mb-10">
           <div>
-            <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">
-              <UserCircle className="w-4 h-4"/> Họ và tên
-            </label>
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Họ và tên</label>
             <input 
               type="text" 
-              placeholder="Nhập họ và tên..."
+              placeholder="Nhập tên của em..."
               className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white transition-all font-bold outline-none"
               value={studentName}
               onChange={(e) => setStudentName(e.target.value)}
             />
           </div>
           <div>
-            <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">
-              <School className="w-4 h-4"/> Lớp học
-            </label>
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">Lớp học</label>
             <input 
               type="text" 
-              placeholder="Ví dụ: 12A1, 11B2..."
+              placeholder="Ví dụ: 12A1..."
               className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-transparent focus:border-indigo-600 focus:bg-white transition-all font-bold outline-none"
               value={className}
               onChange={(e) => setClassName(e.target.value)}
             />
           </div>
           <div>
-            <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest mb-2 ml-2">
-              <Search className="w-4 h-4"/> Mã đề thi (6 ký tự)
-            </label>
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block text-center">Mã đề thi</label>
             <input 
               type="text" 
               placeholder="NHẬP MÃ"
@@ -441,34 +410,25 @@ const App: React.FC = () => {
             />
           </div>
         </div>
-
         <button 
           onClick={validateAndJoinExam}
-          disabled={isDbLoading}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-6 rounded-[24px] font-black text-xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 disabled:opacity-50 transition-all transform active:scale-95"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-6 rounded-[24px] font-black text-xl shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 transition-all transform active:scale-95"
         >
-          {isDbLoading ? <Loader2 className="animate-spin w-6 h-6"/> : <>VÀO THI NGAY <ChevronRight className="w-6 h-6" /></>}
+          VÀO THI NGAY <ChevronRight className="w-6 h-6" />
         </button>
-        <p className="mt-8 text-slate-400 text-[10px] text-center font-black uppercase tracking-widest">Hệ thống lưu trữ Cloud v2.5</p>
       </div>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-[#F8FAFF]">
-      <header className="bg-white/90 border-b border-slate-100 py-4 px-6 sticky top-0 z-[100] backdrop-blur-xl">
+      <header className="bg-white border-b border-slate-100 py-4 px-6 sticky top-0 z-[100]">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => { window.location.hash = ''; setMode(AppMode.TEACHER_DASHBOARD); }}>
-            <div className="bg-indigo-600 p-2.5 rounded-[14px] shadow-md shadow-indigo-100"><GraduationCap className="text-white w-6 h-6" /></div>
+            <div className="bg-indigo-600 p-2 rounded-xl"><GraduationCap className="text-white w-6 h-6" /></div>
             <span className="font-black text-slate-900 text-2xl tracking-tighter">SmartEnglish</span>
           </div>
-          <div className="flex items-center gap-4">
-             {isDbLoading && <Loader2 className="animate-spin text-indigo-600 w-5 h-5"/>}
-             <div className="hidden sm:block text-right">
-                <div className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Dữ liệu Cloud</div>
-                <div className="text-sm font-bold text-slate-900">{mode === AppMode.TEACHER_DASHBOARD ? 'Giáo viên' : 'Cổng học sinh'}</div>
-             </div>
-          </div>
+          {isDbLoading && <Loader2 className="animate-spin text-indigo-600 w-5 h-5"/>}
         </div>
       </header>
 
@@ -477,7 +437,6 @@ const App: React.FC = () => {
           <div className="max-w-2xl mx-auto p-12 bg-white rounded-[40px] text-center shadow-xl mb-8 animate-pulse border border-indigo-50">
             <Loader2 className="animate-spin w-16 h-16 text-indigo-600 mx-auto mb-6"/>
             <h2 className="text-2xl font-black text-slate-900 mb-2">{loadingStep}</h2>
-            <p className="text-slate-400 font-medium">AI đang xử lý tài liệu Word của bạn...</p>
           </div>
         )}
 
@@ -490,28 +449,23 @@ const App: React.FC = () => {
              <div className="bg-white p-8 rounded-[32px] shadow-sm flex justify-between items-center mb-8 border border-slate-100">
                 <div>
                   <h2 className="text-2xl font-black text-slate-900 mb-1">Xem trước đề thi</h2>
-                  <p className="text-slate-500 font-medium">Vui lòng kiểm tra lại nội dung trước khi xuất bản.</p>
+                  <p className="text-slate-500 font-medium">Vui lòng kiểm tra lại nội dung.</p>
                 </div>
-                <button 
-                  onClick={saveExamToDb} 
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-2xl font-black text-lg shadow-lg shadow-indigo-50 transition-all flex items-center gap-2"
-                >
+                <button onClick={saveExamToDb} className="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-2xl font-black text-lg transition-all flex items-center gap-2">
                   <Database className="w-5 h-5"/> Lưu Đề Thi
                 </button>
              </div>
              <div className="space-y-6">
                 {currentExam.questions.map((q, idx) => (
                   <div key={q.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                    <div className="flex gap-4 mb-6">
+                    <div className="flex gap-4 mb-6 font-bold text-lg text-slate-800">
                       <span className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-black flex-shrink-0">{idx+1}</span>
-                      <p className="text-lg font-bold text-slate-800 pt-1.5">{q.prompt}</p>
+                      <p className="pt-1.5">{q.prompt}</p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 ml-0 md:ml-14">
                       {q.options.map((opt, oIdx) => (
-                        <div key={oIdx} className={`p-4 rounded-2xl border-2 flex items-center gap-3 ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700 font-bold' : 'bg-slate-50 border-transparent text-slate-600 font-medium'}`}>
-                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-black ${oIdx === q.correctAnswerIndex ? 'bg-emerald-500 text-white' : 'bg-white'}`}>
-                            {String.fromCharCode(65+oIdx)}
-                          </span>
+                        <div key={oIdx} className={`p-4 rounded-2xl border-2 flex items-center gap-3 ${oIdx === q.correctAnswerIndex ? 'bg-emerald-50 border-emerald-500 text-emerald-700 font-bold' : 'bg-slate-50 border-transparent text-slate-600'}`}>
+                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black ${oIdx === q.correctAnswerIndex ? 'bg-emerald-500 text-white' : 'bg-white'}`}>{String.fromCharCode(65+oIdx)}</span>
                           {opt}
                         </div>
                       ))}
@@ -524,15 +478,15 @@ const App: React.FC = () => {
 
         {mode === AppMode.STUDENT_EXAM && (
           <div className="max-w-4xl mx-auto p-6 animate-fade-in">
-            <div className="bg-white p-8 rounded-[32px] shadow-sm mb-8 border border-slate-100 flex justify-between items-center sticky top-24 z-50">
+            <div className="bg-white p-8 rounded-[32px] shadow-sm mb-8 border border-slate-100 flex justify-between items-center sticky top-20 z-50">
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-indigo-100">{currentExam?.questions.length}</div>
+                  <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-xl">{currentExam?.questions.length}</div>
                   <div>
                     <h2 className="text-xl font-black text-slate-900 leading-tight">{currentExam?.title}</h2>
-                    <p className="text-indigo-600 font-black text-sm uppercase tracking-wider">{studentName} - Lớp {className}</p>
+                    <p className="text-indigo-600 font-black text-sm uppercase tracking-wider">{studentName} - {className}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 bg-indigo-50 px-6 py-4 rounded-[24px] border border-indigo-100">
+                <div className="flex items-center gap-3 bg-indigo-50 px-6 py-4 rounded-[24px]">
                   <Clock className="w-6 h-6 text-indigo-600"/>
                   <span className="text-3xl font-black text-indigo-600 tabular-nums">{formatTime(timer)}</span>
                 </div>
@@ -542,7 +496,7 @@ const App: React.FC = () => {
               {currentExam?.questions.map((q, idx) => (
                 <div key={q.id} className="bg-white p-10 rounded-[40px] shadow-sm border border-slate-100">
                   <h3 className="text-xl font-bold mb-8 flex gap-5">
-                    <span className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black flex-shrink-0 shadow-lg">{idx+1}</span>
+                    <span className="w-12 h-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black flex-shrink-0">{idx+1}</span>
                     <span className="mt-2 text-slate-800 leading-relaxed">{q.prompt}</span>
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-0 md:ml-16">
@@ -552,13 +506,11 @@ const App: React.FC = () => {
                         onClick={() => setStudentAnswers({...studentAnswers, [q.id]: oIdx})}
                         className={`p-5 rounded-2xl border-2 text-left font-bold transition-all flex items-center gap-4 ${
                           studentAnswers[q.id] === oIdx 
-                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl shadow-indigo-100 transform -translate-y-1' 
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xl transform -translate-y-1' 
                           : 'bg-white border-slate-100 text-slate-600 hover:border-indigo-200'
                         }`}
                       >
-                        <span className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${studentAnswers[q.id] === oIdx ? 'bg-white/20' : 'bg-slate-100'}`}>
-                          {String.fromCharCode(65+oIdx)}
-                        </span>
+                        <span className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${studentAnswers[q.id] === oIdx ? 'bg-white/20' : 'bg-slate-100'}`}>{String.fromCharCode(65+oIdx)}</span>
                         {opt}
                       </button>
                     ))}
@@ -568,55 +520,32 @@ const App: React.FC = () => {
             </div>
 
             <div className="mt-12 p-10 bg-white rounded-[40px] shadow-lg border border-slate-100 text-center">
-               <p className="text-slate-400 font-bold mb-8 flex items-center justify-center gap-2">
-                 <CheckCircle2 className="w-5 h-5 text-emerald-500"/> Chúc bạn hoàn thành bài thi tốt nhất!
-               </p>
-               <button 
-                 onClick={() => { if(confirm("Xác nhận nộp bài?")) submitExam(); }} 
-                 className="w-full max-w-md bg-indigo-600 text-white py-6 rounded-[24px] font-black text-2xl shadow-xl shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all"
-               >
-                 NỘP BÀI NGAY
-               </button>
+               <button onClick={() => { if(confirm("Nộp bài?")) submitExam(); }} className="w-full max-w-md bg-indigo-600 text-white py-6 rounded-[24px] font-black text-2xl shadow-xl hover:bg-indigo-700 transition-all">NỘP BÀI NGAY</button>
             </div>
           </div>
         )}
 
         {mode === AppMode.STUDENT_RESULT && currentSubmission && (
-          <div className="max-w-xl mx-auto p-12 bg-white rounded-[56px] shadow-2xl text-center animate-fade-in border border-slate-50 relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-full h-2 bg-indigo-600"></div>
-             <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-[32px] flex items-center justify-center mx-auto mb-8 shadow-inner">
-               <Trophy className="w-12 h-12"/>
-             </div>
-             <h2 className="text-4xl font-black text-slate-900 mb-2">Đã Lưu Điểm!</h2>
-             <p className="text-slate-500 mb-10 font-bold uppercase tracking-wider text-xs">Chúc mừng {studentName} hoàn thành bài thi.</p>
-             
+          <div className="max-w-xl mx-auto p-12 bg-white rounded-[56px] shadow-2xl text-center border border-slate-50">
+             <div className="w-24 h-24 bg-emerald-50 text-emerald-600 rounded-[32px] flex items-center justify-center mx-auto mb-8 shadow-inner"><Trophy className="w-12 h-12"/></div>
+             <h2 className="text-4xl font-black text-slate-900 mb-2">Hoàn Thành!</h2>
+             <p className="text-slate-500 mb-10 font-bold uppercase tracking-wider text-xs">{studentName} - {className}</p>
              <div className="grid grid-cols-2 gap-4 mb-10">
                 <div className="bg-indigo-50 p-8 rounded-[32px] border border-indigo-100">
                    <div className="text-5xl font-black text-indigo-600">{currentSubmission.score}</div>
-                   <div className="text-[10px] font-black text-indigo-400 uppercase mt-2 tracking-widest">Câu đúng</div>
+                   <div className="text-[10px] font-black text-indigo-400 uppercase mt-2">Câu đúng</div>
                 </div>
                 <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-100">
                    <div className="text-5xl font-black text-slate-600">{formatTime(currentSubmission.timeSpent)}</div>
-                   <div className="text-[10px] font-black text-slate-400 uppercase mt-2 tracking-widest">Thời gian</div>
+                   <div className="text-[10px] font-black text-slate-400 uppercase mt-2">Thời gian</div>
                 </div>
              </div>
-
-             <button 
-              onClick={() => { window.location.hash = ''; setMode(AppMode.TEACHER_DASHBOARD); }} 
-              className="bg-slate-900 text-white w-full py-5 rounded-[24px] font-black text-lg transition-all hover:bg-black shadow-xl flex items-center justify-center gap-2"
-             >
-               Về Trang Chủ <ArrowLeft className="w-5 h-5"/>
-             </button>
+             <button onClick={() => window.location.reload()} className="bg-slate-900 text-white w-full py-5 rounded-[24px] font-black text-lg hover:bg-black transition-all">Trở về</button>
           </div>
         )}
       </main>
     </div>
   );
 };
-
-// Helper components defined clearly
-const CheckCircle2 = (props: any) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-);
 
 export default App;

@@ -3,19 +3,14 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  // Khởi tạo instance mới ngay tại thời điểm gọi để đảm bảo lấy đúng API Key
+  // Khởi tạo instance ngay tại đây theo đúng hướng dẫn kỹ thuật
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  if (!process.env.API_KEY) {
-    throw new Error("Chưa cấu hình Gemini API Key (API_KEY) trên Vercel.");
-  }
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Hãy trích xuất các câu hỏi trắc nghiệm tiếng Anh từ văn bản sau. 
     Văn bản có thể chứa nhiều câu hỏi. Với mỗi câu hỏi, hãy xác định nội dung câu hỏi (prompt), 4 lựa chọn (A, B, C, D) và chỉ số của đáp án đúng (0-3).
     Đồng thời, hãy đề xuất một tiêu đề phù hợp cho đề thi này dựa trên nội dung.
-    Lưu ý quan trọng: Chỉ trích xuất các câu hỏi trắc nghiệm thực sự, bỏ qua các đoạn văn bản hướng dẫn không liên quan.
     
     NỘI DUNG VĂN BẢN:
     ${text}`,
@@ -41,7 +36,7 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
                 correctAnswerIndex: { type: Type.INTEGER }
               },
               required: ["id", "prompt", "options", "correctAnswerIndex"]
-                },
+            },
           },
         },
         required: ["title", "questions"]

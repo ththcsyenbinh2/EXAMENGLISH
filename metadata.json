@@ -1,0 +1,6 @@
+
+{
+  "name": "SmartEnglish Cloud Exam Creator",
+  "description": "Nền tảng tạo đề thi AI tích hợp Database Supabase. Giáo viên quản lý đề và thống kê điểm số tập trung, học sinh thi trực tuyến và lưu kết quả vĩnh viễn trên Cloud.",
+  "requestFramePermissions": []
+}

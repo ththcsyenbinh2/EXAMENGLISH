@@ -1,11 +1,11 @@
-// App.tsx
+
 import React, { useState, useEffect } from 'react';
 import { AppMode, Exam, Question, StudentSubmission } from './types';
 import { extractQuestionsFromText, gradeEssayWithAI } from './services/geminiService';
 import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/supabase';
-import {
-  GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft,
-  Database, Settings, RefreshCw, CheckCircle2, CloudLightning,
+import { 
+  GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
+  Database, Settings, RefreshCw, CheckCircle2, CloudLightning, 
   ClipboardList, Info, Save, Activity, Eye, FileText, ChevronRight, XCircle, Loader2, Link2, Copy, Lock, Key
 } from 'lucide-react';
 
@@ -17,7 +17,7 @@ const App: React.FC = () => {
   const [selectedSubmission, setSelectedSubmission] = useState<StudentSubmission | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
-
+  
   const [showSetup, setShowSetup] = useState(false);
   const [inputUrl, setInputUrl] = useState('');
   const [inputKey, setInputKey] = useState('');
@@ -103,20 +103,6 @@ const App: React.FC = () => {
       setMode(AppMode.EXAM_SETUP);
     } catch (error: any) { alert(error.message); }
     finally { setIsProcessing(false); }
-  };
-
-  const toggleExamOpen = async (exam: Exam) => {
-    const newOpen = !exam.is_open;
-    setIsProcessing(true);
-    setLoadingStep(newOpen ? 'Đang mở đề thi...' : 'Đang đóng đề thi...');
-    try {
-      await supabase.from('exams').update({ is_open: newOpen }).eq('id', exam.id);
-      fetchInitialData();
-    } catch (e: any) {
-      alert("Lỗi khi cập nhật trạng thái: " + e.message);
-    } finally {
-      setIsProcessing(false);
-    }
   };
 
   const deleteExam = async (id: string) => {
@@ -323,9 +309,6 @@ const App: React.FC = () => {
                     <h3 className="text-xl font-black text-slate-800 mb-6 line-clamp-2 h-14 leading-tight">{exam.title}</h3>
                     <div className="mt-auto flex gap-2">
                        <button onClick={() => { setCurrentExam(exam); setMode(AppMode.VIEW_SUBMISSIONS); }} className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black text-xs shadow-lg">XEM BÀI LÀM</button>
-                       <button onClick={() => toggleExamOpen(exam)} className={`flex-1 py-4 rounded-2xl font-black text-xs shadow-lg transition-all ${exam.is_open ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>
-                         {exam.is_open ? 'ĐÓNG ĐỀ' : 'MỞ ĐỀ'}
-                       </button>
                        <button 
                         onClick={() => { 
                           const link = getPortableLink('#hocsinh');

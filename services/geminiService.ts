@@ -1,46 +1,48 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Question } from "../types";
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "");
+// Khởi tạo một lần duy nhất để tái sử dụng
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || process.env.API_KEY || "");
 
 /**
- * Bóc tách đề thi từ văn bản thuần (text) đã extract bằng mammoth
- * Cải tiến: Không mặc định chọn A, ưu tiên phát hiện dấu hiệu đáp án đúng (*, **, in đậm qua từ khóa)
+ * Bóc tách đề thi từ văn bản thuần (text từ mammoth)
+ * Chỉ sửa phần cần thiết để nhận diện đáp án đúng chính xác hơn:
+ * - Ưu tiên phát hiện * hoặc ** trước đáp án
+ * - Không mặc định chọn A
+ * - Suy luận logic nếu cần
  */
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
   const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash-preview",
+    model: "gemini-1.5-flash", // Giữ ổn định, chính thức và tốt hơn preview cũ
     generationConfig: {
       responseMimeType: "application/json",
-      temperature: 0.3,
+      temperature: 0.2, // Giảm temperature để AI tập trung và ít đoán bừa
     },
   });
 
-  const prompt = `Nội dung đề thi (văn bản thuần, có thể có dấu * hoặc ** trước đáp án đúng):\n\n${text}
+  const prompt = `Nội dung đề thi (có thể có dấu * hoặc ** trước đáp án đúng):\n\n${text}
 
-Bạn là chuyên gia bóc tách đề thi tiếng Việt hoặc tiếng Anh.
-Nhiệm vụ: Phân tích và trả về JSON đúng cấu trúc dưới đây.
+Bạn là chuyên gia bóc tách đề thi cực kỳ chính xác.
 
-QUY TẮC XÁC ĐỊNH ĐÁP ÁN ĐÚNG TRẮC NGHIỆM (MCQ):
-- Ưu tiên lựa chọn có dấu * hoặc ** ở đầu (ví dụ: "*A. ..." hoặc "**B. ...").
-- Nếu không có *, tìm từ khóa gợi ý đáp án đúng như "đáp án", "correct", "key", "Answer:" ở cuối đề.
-- Nếu vẫn không thấy dấu hiệu rõ ràng, hãy suy luận logic để chọn đáp án đúng nhất (KHÔNG mặc định chọn A).
-- Nếu thực sự không xác định được, để "correctAnswerIndex": null.
+QUY TẮC XÁC ĐỊNH ĐÁP ÁN ĐÚNG CHO TRẮC NGHIỆM (MCQ) - RẤT QUAN TRỌNG:
+1. Ưu tiên hàng đầu: Nếu có lựa chọn bắt đầu bằng * hoặc ** (ví dụ: "*A. ..." hoặc "**B. ..."), chọn ngay đó làm đáp án đúng.
+2. Nếu không có *, tìm phần Answer Key hoặc đáp án ở cuối đề.
+3. Nếu vẫn không có dấu hiệu rõ ràng, hãy suy luận logic dựa trên kiến thức để chọn đáp án đúng nhất.
+4. TUYỆT ĐỐI KHÔNG mặc định chọn A (index 0) nếu không có cơ sở.
 
-QUY TẮC TỰ LUẬN (ESSAY):
-- Nhận diện câu yêu cầu viết đoạn, trả lời mở, viết lại câu...
+QUY TẮC TỰ LUẬN:
 - Cung cấp sampleAnswer ngắn gọn, đúng trọng tâm để làm chuẩn chấm.
 
-CẤU TRÚC JSON BẮT BUỘC:
+TRẢ VỀ JSON CHÍNH XÁC THEO CẤU TRÚC SAU, KHÔNG THÊM CHỮ:
 {
-  "title": "string (tiêu đề đề thi hoặc tên file nếu không có)",
+  "title": "string",
   "questions": [
     {
       "type": "mcq" | "essay",
-      "prompt": "nội dung câu hỏi",
-      "options": ["A. ...", "B. ...", "C. ...", "D. ..."] (chỉ cho mcq),
-      "correctAnswerIndex": number (0=A, 1=B, ...) hoặc null nếu không xác định,
-      "sampleAnswer": "string" (chỉ cho essay, có thể để rỗng nếu không có gợi ý)
+      "prompt": "string",
+      "options": ["A. ...", "B. ...", ...] (chỉ mcq),
+      "correctAnswerIndex": number (0=A, 1=B, ...) hoặc null nếu thực sự không xác định,
+      "sampleAnswer": "string" (chỉ essay)
     }
   ]
 }`;
@@ -49,21 +51,19 @@ CẤU TRÚC JSON BẮT BUỘC:
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
-    // Làm sạch JSON từ output của Gemini (thường bọc trong ```json)
+    // Làm sạch JSON từ output Gemini
     const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || responseText.match(/{[\s\S]*}/);
-    if (!jsonMatch) {
-      throw new Error("Không thể parse JSON từ phản hồi của AI");
-    }
+    if (!jsonMatch) throw new Error("Không parse được JSON từ AI");
 
     const data = JSON.parse(jsonMatch[1] || jsonMatch[0]);
 
-    // Xử lý thêm: tự động phát hiện * hoặc ** ở đầu option
+    // Xử lý bổ sung: tự động phát hiện và xóa dấu * nếu AI bỏ sót
     const processedQuestions = (data.questions || []).map((q: any, idx: number) => {
       if (q.type === "mcq" && q.options && (q.correctAnswerIndex === null || q.correctAnswerIndex === undefined)) {
         for (let i = 0; i < q.options.length; i++) {
-          const opt = q.options[i].trim();
-          if (opt.startsWith("*") || opt.startsWith("**")) {
-            q.options[i] = opt.replace(/^\*+\s*/, "").trim(); // Xóa dấu *
+          const cleanOpt = q.options[i].trim();
+          if (cleanOpt.startsWith("*") || cleanOpt.startsWith("**")) {
+            q.options[i] = cleanOpt.replace(/^\*+\s*/, "").trim();
             q.correctAnswerIndex = i;
             break;
           }
@@ -74,7 +74,7 @@ CẤU TRÚC JSON BẮT BUỘC:
         id: `q-${idx}-${Date.now()}`,
         type: q.type,
         prompt: q.prompt || "",
-        options: q.options || undefined,
+        options: q.options,
         correctAnswerIndex: q.correctAnswerIndex ?? null,
         sampleAnswer: q.sampleAnswer || "",
       };
@@ -85,57 +85,54 @@ CẤU TRÚC JSON BẮT BUỘC:
       questions: processedQuestions,
     };
   } catch (error: any) {
-    console.error("Lỗi extractQuestionsFromText:", error);
+    console.error("Lỗi bóc tách đề:", error);
     throw new Error(`AI không thể bóc tách đề: ${error.message}`);
   }
 };
 
 /**
- * Chấm điểm tự luận chính xác và ổn định hơn
- * Thang điểm: 0.0 → 1.0, bước 0.1
+ * Chấm tự luận chính xác và công bằng hơn
+ * Thang điểm 0.0 → 1.0 với bước 0.1
  */
 export const gradeEssayWithAI = async (
   prompt: string,
   studentAnswer: string,
   sampleAnswer: string
 ): Promise<number> => {
-  if (!studentAnswer.trim()) return 0;
+  if (!studentAnswer.trim()) return 0.0;
 
   const model = genAI.getGenerativeModel({
-    model: "gemini-3-flash-preview",
+    model: "gemini-1.5-flash",
     generationConfig: {
       temperature: 0.1,
     },
   });
 
-  const instruction = `Bạn là giáo viên chấm thi nghiêm ngặt và công bằng.
+  const instruction = `Bạn là giáo viên chấm thi nghiêm ngặt, công bằng.
 
 Câu hỏi: ${prompt}
 Đáp án mẫu / hướng dẫn chấm: ${sampleAnswer || "Không có đáp án mẫu"}
 Bài làm học sinh: ${studentAnswer}
 
-Hãy chấm điểm từ 0.0 đến 1.0 (bước 0.1) dựa trên:
-- 1.0: Đúng hoàn toàn ý chính, ngữ pháp tốt, đủ ý.
-- 0.8–0.9: Đúng ý chính, có thiếu sót nhỏ hoặc lỗi ngữ pháp nhẹ.
-- 0.6–0.7: Đúng một phần ý chính, còn thiếu hoặc sai nhẹ.
-- 0.4–0.5: Có nỗ lực nhưng sai nhiều hoặc thiếu ý quan trọng.
-- 0.0–0.3: Sai hoàn toàn, lạc đề hoặc quá ngắn.
-- 0.0: Để trống hoặc không liên quan.
+Chấm điểm theo thang 0.0 đến 1.0 (bước 0.1) như sau:
+- 1.0: Đúng hoàn toàn ý chính và phụ, ngữ pháp tốt
+- 0.8–0.9: Đúng ý chính, thiếu ý phụ nhỏ hoặc lỗi nhẹ
+- 0.6–0.7: Đúng một phần ý chính
+- 0.4–0.5: Có nỗ lực nhưng sai nhiều hoặc thiếu ý quan trọng
+- 0.2–0.3: Rất ít đúng hoặc lạc đề nhẹ
+- 0.0: Sai hoàn toàn, lạc đề hoặc để trống
 
-CHỈ TRẢ VỀ MỘT CON SỐ DUY NHẤT (ví dụ: 0.8), KHÔNG GIẢI THÍCH, KHÔNG THÊM CHỮ.`;
+CHỈ TRẢ VỀ MỘT CON SỐ DUY NHẤT (ví dụ: 0.8). KHÔNG GIẢI THÍCH, KHÔNG THÊM KÝ TỰ.`;
 
   try {
     const result = await model.generateContent(instruction);
     const text = result.response.text().trim();
-
     const score = parseFloat(text);
-    if (isNaN(score) || score < 0 || score > 1) {
-      return 0;
-    }
-    // Làm tròn đến 0.1
-    return Math.round(score * 10) / 10;
+
+    if (isNaN(score) || score < 0 || score > 1) return 0.0;
+    return Math.round(score * 10) / 10; // Làm tròn đến 0.1
   } catch (error) {
     console.error("Lỗi chấm tự luận:", error);
-    return 0;
+    return 0.0;
   }
 };

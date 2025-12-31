@@ -247,8 +247,8 @@ const App: React.FC = () => {
               <GraduationCap size={24}/>
             </div>
             <div>
-              <span className="text-xl font-black tracking-tight block leading-none">Smart<span className="text-indigo-600">Exam</span></span>
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5 block">Cloud Enterprise</span>
+              <span className="text-xl font-black tracking-tight block leading-none">EXAM<span className="text-indigo-600">ENGLISH</span></span>
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mt-0.5 block">TRƯỜNG TH-THCS YÊN BÌNH</span>
             </div>
           </div>
           

@@ -14,6 +14,8 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
         NHIỆM VỤ: Chuyển văn bản thành JSON đề thi.
 
         QUY TẮC NHẬN DIỆN ĐÁP ÁN ĐÚNG (MCQ):
+        - Ưu tiên hàng đầu: Nếu có lựa chọn bắt đầu bằng * hoặc ** (ví dụ: "*A. ..." hoặc "**B. ..."), chọn ngay đó làm đáp án đúng.
+        - Nếu không có *, tìm phần Answer Key hoặc đáp án ở cuối đề.
         - Hãy tìm các lựa chọn có dấu hiệu: In đậm, gạch chân, hoặc có ký hiệu (x), (*).
         - Nếu có bảng đáp án (Answer Key) ở cuối văn bản, hãy đối chiếu để lấy correctAnswerIndex.
         - TUYỆT ĐỐI KHÔNG mặc định chọn đáp án đầu tiên (index 0). Nếu không thấy dấu hiệu, hãy tự giải câu đố để chọn đáp án đúng nhất.

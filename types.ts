@@ -1,9 +1,13 @@
 
+export type QuestionType = 'mcq' | 'essay';
+
 export interface Question {
   id: string;
+  type: QuestionType;
   prompt: string;
-  options: string[];
-  correctAnswerIndex: number;
+  options?: string[]; // Chỉ dành cho MCQ
+  correctAnswerIndex?: number; // Chỉ dành cho MCQ
+  sampleAnswer?: string; // Đáp án gợi ý cho Tự luận
 }
 
 export interface Exam {
@@ -20,7 +24,7 @@ export interface StudentSubmission {
   exam_id: string;
   student_name: string;
   class_name: string;
-  answers: Record<string, number>;
+  answers: Record<string, any>; // Lưu index (MCQ) hoặc string (Essay)
   score: number;
   total: number;
   submitted_at: string;

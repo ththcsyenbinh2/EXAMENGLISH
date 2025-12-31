@@ -77,7 +77,11 @@ const App: React.FC = () => {
       const arrayBuffer = await file.arrayBuffer();
       const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
       
-      setLoadingStep('AI đang phân tích cấu trúc đề thi...');
+      if (!result.value || result.value.trim().length < 20) {
+        throw new Error("Văn bản trong file quá ngắn hoặc không đọc được nội dung.");
+      }
+
+      setLoadingStep('AI đang bóc tách đề thi (Flash Engine)...');
       const extracted = await extractQuestionsFromText(result.value);
       
       const newExam: Exam = {
@@ -86,13 +90,14 @@ const App: React.FC = () => {
         title: extracted.title,
         description: `Tạo từ: ${file.name}`,
         questions: extracted.questions,
-        is_open: true, // Mặc định mở luôn để học sinh có thể thi ngay
+        is_open: true,
         created_at: new Date().toISOString()
       };
       setCurrentExam(newExam);
       setMode(AppMode.EXAM_SETUP);
     } catch (error: any) {
-      alert(`Lỗi: ${error.message}`);
+      console.error("Upload process error:", error);
+      alert(error.message || "Đã xảy ra lỗi không xác định.");
     } finally {
       setIsProcessing(false);
       e.target.value = '';
@@ -106,6 +111,7 @@ const App: React.FC = () => {
     if (!error) {
       await fetchInitialData();
       setMode(AppMode.TEACHER_DASHBOARD);
+      alert("Đề thi đã được lưu thành công!");
     } else {
       alert("Lỗi khi lưu đề thi: " + error.message);
     }
@@ -155,7 +161,7 @@ const App: React.FC = () => {
                 <CloudLightning size={48} className="text-indigo-600 animate-pulse"/>
               </div>
               <h2 className="text-3xl font-black text-slate-800 tracking-tight mb-2">{loadingStep}</h2>
-              <p className="text-slate-400 font-medium">Chúng tôi đang sử dụng Gemini 3 Pro để xử lý đề thi của bạn với độ chính xác cao nhất.</p>
+              <p className="text-slate-400 font-medium">Đang tối ưu hóa dữ liệu với Gemini 3 Flash. Vui lòng không đóng trình duyệt.</p>
             </div>
           </div>
         )}

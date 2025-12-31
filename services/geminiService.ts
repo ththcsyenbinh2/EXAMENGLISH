@@ -2,10 +2,25 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
-// Fix: Initialize GoogleGenAI with the API key from process.env.API_KEY directly as required.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper function to get env safely in browser
+const getEnv = (key: string): string => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
+    return process.env[key] as string;
+  }
+  // @ts-ignore
+  return window.process?.env?.[key] || '';
+};
+
+const API_KEY = getEnv('API_KEY');
+
+// Initialize AI only if API_KEY is present to avoid crash
+const ai = new GoogleGenAI({ apiKey: API_KEY || 'MISSING_KEY' });
 
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
+  if (!API_KEY || API_KEY === 'MISSING_KEY') {
+    throw new Error("Chưa cấu hình Gemini API Key trong biến môi trường!");
+  }
+
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Hãy trích xuất các câu hỏi trắc nghiệm tiếng Anh từ văn bản sau. 
@@ -46,11 +61,10 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   });
 
   try {
-    // Fix: Access the .text property directly from the GenerateContentResponse object.
     const result = JSON.parse(response.text || '{}');
     return {
       title: result.title || "Đề thi tiếng Anh không tiêu đề",
-      questions: result.questions.map((q: any, idx: number) => ({
+      questions: (result.questions || []).map((q: any, idx: number) => ({
         ...q,
         id: q.id || `q-${idx}-${Date.now()}`
       }))

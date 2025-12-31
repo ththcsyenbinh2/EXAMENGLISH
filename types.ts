@@ -10,7 +10,6 @@ export interface Exam {
   id: string;
   exam_code: string;
   title: string;
-  description: string;
   questions: Question[];
   is_open: boolean;
   created_at: string;

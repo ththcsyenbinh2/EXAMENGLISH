@@ -37,7 +37,6 @@ const App: React.FC = () => {
     if (configured) {
       fetchInitialData();
     } else {
-      // Nếu chưa có cấu hình, mở màn hình setup nếu đang ở Dashboard
       if (window.location.hash !== '#hocsinh') {
         setShowSetup(true);
       }
@@ -105,7 +104,6 @@ const App: React.FC = () => {
         id: Math.random().toString(36).substring(2, 11),
         exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
         title: extracted.title,
-        description: `Tạo từ: ${file.name}`,
         questions: extracted.questions,
         is_open: true,
         created_at: new Date().toISOString()
@@ -160,7 +158,7 @@ const App: React.FC = () => {
           <div className="bg-amber-50 border border-amber-100 p-6 rounded-3xl mb-10 flex gap-4">
             <Info className="text-amber-500 shrink-0" size={24}/>
             <p className="text-amber-700 text-sm font-medium leading-relaxed">
-              Vercel không thể nạp biến môi trường vào trình duyệt. Vui lòng nhập thông tin bên dưới để ứng dụng có thể lưu trữ đề thi và kết quả thi.
+              Nhập URL và Anon Key từ Supabase Project Settings > API để bắt đầu.
             </p>
           </div>
 
@@ -203,10 +201,6 @@ const App: React.FC = () => {
               Bỏ qua
             </button>
           </div>
-
-          <p className="mt-8 text-center text-xs font-bold text-slate-300">
-            Thông tin được lưu trong trình duyệt của bạn và không được gửi đi bất cứ đâu.
-          </p>
         </div>
       </div>
     );

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppMode, Exam, Question, StudentSubmission } from './types';
-import { extractQuestionsFromText, gradeEssayWithAI } from './services/geminiService';
+import { extractQuestionsFromText, gradeAllEssaysWithAI } from './services/geminiService';
 import { supabase, isSupabaseConfigured, getSupabaseConfig } from './services/supabase';
 import { 
   GraduationCap, Plus, Share2, Trash2, Trophy, Clock, Users, ArrowLeft, 
@@ -100,21 +100,18 @@ const App: React.FC = () => {
     setLoadingStep("Đang dọn dẹp dữ liệu Cloud...");
     
     try {
-      // 1. Xóa bài nộp trước để tránh lỗi ràng buộc khóa ngoại
       const { error: subErr } = await supabase.from('submissions').delete().eq('exam_id', id);
       if (subErr) throw subErr;
 
-      // 2. Xóa đề thi
       const { error: exErr } = await supabase.from('exams').delete().eq('id', id);
       if (exErr) throw exErr;
 
-      // 3. Cập nhật local state ngay lập tức
       setExams(prev => prev.filter(e => e.id !== id));
       setSubmissions(prev => prev.filter(s => s.exam_id !== id));
       
       alert("Đã xóa vĩnh viễn đề thi thành công!");
     } catch (e: any) {
-      alert("Lỗi khi xóa: " + e.message + "\n\nLưu ý: Bạn cần cấp quyền DELETE trong Supabase RLS policies.");
+      alert("Lỗi khi xóa: " + e.message);
     } finally {
       setIsProcessing(false);
     }
@@ -145,23 +142,40 @@ const App: React.FC = () => {
   const handleStudentSubmit = async () => {
     if(!currentExam) return;
     setIsProcessing(true);
-    setLoadingStep('AI đang chấm điểm...');
+    setLoadingStep('Hệ thống đang chấm bài...');
     try {
       let finalScore = 0;
       const finalAnswers: Record<string, any> = {};
       
+      // 1. Phân loại câu hỏi để chấm điểm hàng loạt
+      const essayQuestionsToGrade: { id: string, prompt: string, studentAnswer: string, sampleAnswer: string }[] = [];
+      
       for (const q of currentExam.questions) {
         const ans = studentAnswers[q.id];
         if (q.type === 'mcq') {
-          // Ép kiểu chắc chắn là Number để so khớp chính xác
           const isCorrect = Number(ans) === Number(q.correctAnswerIndex);
           if (isCorrect) finalScore += 1;
           finalAnswers[q.id] = { value: ans, type: 'mcq' };
         } else {
-          const aiScore = ans ? await gradeEssayWithAI(q.prompt, ans, q.sampleAnswer || "") : 0;
-          finalScore += aiScore;
-          finalAnswers[q.id] = { value: ans || "", type: 'essay', ai_score: aiScore };
+          essayQuestionsToGrade.push({
+            id: q.id,
+            prompt: q.prompt,
+            studentAnswer: ans || "",
+            sampleAnswer: q.sampleAnswer || ""
+          });
         }
+      }
+
+      // 2. Gọi AI chấm điểm hàng loạt cho tất cả câu tự luận trong 1 lần duy nhất
+      if (essayQuestionsToGrade.length > 0) {
+        setLoadingStep(`AI đang chấm ${essayQuestionsToGrade.length} câu tự luận...`);
+        const essayScores = await gradeAllEssaysWithAI(essayQuestionsToGrade);
+        
+        essayQuestionsToGrade.forEach(e => {
+          const score = essayScores[e.id] || 0;
+          finalScore += score;
+          finalAnswers[e.id] = { value: e.studentAnswer, type: 'essay', ai_score: score };
+        });
       }
 
       const payload = { 
@@ -179,7 +193,13 @@ const App: React.FC = () => {
       await supabase.from('submissions').insert([payload]);
       setCurrentSubmission(payload as any);
       setMode(AppMode.STUDENT_RESULT);
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { 
+      if (e.message?.includes('429')) {
+        alert("Hệ thống đang quá tải yêu cầu chấm điểm. Vui lòng đợi 30 giây rồi thử lại.");
+      } else {
+        alert("Lỗi nộp bài: " + e.message); 
+      }
+    }
     finally { setIsProcessing(false); }
   };
 
@@ -331,7 +351,6 @@ const App: React.FC = () => {
                                   
                                   {q.type === 'mcq' ? (
                                     <div className="space-y-4">
-                                       {/* Highlight emerald if correct, red if wrong */}
                                        <div className={`p-6 rounded-3xl border-2 font-bold flex items-center gap-4 ${isCorrect ? 'bg-emerald-500 border-emerald-600 text-white' : 'bg-red-500 border-red-600 text-white'}`}>
                                           <div className="w-12 h-12 bg-white text-slate-900 rounded-xl flex items-center justify-center text-xl shadow-md font-black">
                                              {studentVal !== undefined ? String.fromCharCode(65 + Number(studentVal)) : '?'}

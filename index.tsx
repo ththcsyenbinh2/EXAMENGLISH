@@ -3,7 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// Shim cho process.env để chạy an toàn trên trình duyệt
+// Shim an toàn: Chỉ tạo nếu chưa tồn tại, không ghi đè dữ liệu cũ
 if (typeof window !== 'undefined') {
   (window as any).process = (window as any).process || {};
   (window as any).process.env = (window as any).process.env || {};

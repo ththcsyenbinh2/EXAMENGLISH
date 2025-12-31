@@ -5,9 +5,9 @@ export interface Question {
   id: string;
   type: QuestionType;
   prompt: string;
-  options?: string[]; // Chỉ dành cho MCQ
-  correctAnswerIndex?: number; // Chỉ dành cho MCQ
-  sampleAnswer?: string; // Đáp án gợi ý cho Tự luận
+  options?: string[];
+  correctAnswerIndex?: number;
+  sampleAnswer?: string;
 }
 
 export interface Exam {
@@ -24,7 +24,7 @@ export interface StudentSubmission {
   exam_id: string;
   student_name: string;
   class_name: string;
-  answers: Record<string, any>; // Lưu index (MCQ) hoặc string (Essay)
+  answers: Record<string, any>;
   score: number;
   total: number;
   submitted_at: string;
@@ -33,6 +33,7 @@ export interface StudentSubmission {
 
 export enum AppMode {
   TEACHER_DASHBOARD = 'teacher',
+  ADMIN_LOGIN = 'admin_login',
   EXAM_SETUP = 'setup',
   STUDENT_ENTRY = 'entry',
   STUDENT_EXAM = 'exam',

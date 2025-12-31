@@ -10,24 +10,21 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
       model: "gemini-3-flash-preview",
       contents: `Nội dung văn bản đề thi:\n\n${text}`,
       config: {
-        systemInstruction: `Bạn là chuyên gia bóc tách đề thi tiếng Anh chuyên nghiệp. 
-        Nhiệm vụ: Chuyển văn bản thành JSON chứa danh sách câu hỏi.
+        systemInstruction: `Bạn là một chuyên gia khảo thí tiếng Anh. 
+        NHIỆM VỤ: Chuyển văn bản thành JSON đề thi.
 
-        QUY TẮC QUAN TRỌNG VỀ ĐÁP ÁN:
-        1. Tìm dấu hiệu đáp án đúng: Hãy quét toàn bộ văn bản để tìm đáp án đúng dựa trên:
-           - Chữ cái được in đậm hoặc gạch chân trong các lựa chọn.
-           - Bảng đáp án (Answer Key) thường nằm ở cuối đề thi.
-           - Nếu không có dấu hiệu rõ ràng, hãy dùng kiến thức tiếng Anh của bạn để giải câu hỏi và chọn đáp án đúng nhất.
-        2. TUYỆT ĐỐI KHÔNG mặc định chọn đáp án đầu tiên (index 0). Mỗi câu phải có correctAnswerIndex phản ánh đúng kiến thức hoặc dấu hiệu trong đề.
-
-        PHÂN LOẠI CÂU HỎI:
-        - 'mcq': Câu hỏi có các lựa chọn A, B, C, D...
-        - 'essay': Các câu yêu cầu viết lại câu (Sentence transformation), hoàn thành câu, hoặc viết đoạn văn.
+        QUY TẮC NHẬN DIỆN ĐÁP ÁN ĐÚNG (MCQ):
+        - Hãy tìm các lựa chọn có dấu hiệu: In đậm, gạch chân, hoặc có ký hiệu (x), (*).
+        - Nếu có bảng đáp án (Answer Key) ở cuối văn bản, hãy đối chiếu để lấy correctAnswerIndex.
+        - TUYỆT ĐỐI KHÔNG mặc định chọn đáp án đầu tiên (index 0). Nếu không thấy dấu hiệu, hãy tự giải câu đố để chọn đáp án đúng nhất.
+        
+        QUY TẮC TỰ LUẬN (ESSAY):
+        - Nhận diện các câu yêu cầu viết lại câu, trả lời câu hỏi, viết đoạn văn.
+        - Cung cấp 'sampleAnswer' là đáp án chuẩn nhất.
 
         CẤU TRÚC JSON:
-        - 'mcq': Bắt buộc có 'options' (mảng chuỗi) và 'correctAnswerIndex' (0, 1, 2, hoặc 3).
-        - 'essay': Phải có 'sampleAnswer' (Đáp án mẫu chuẩn để đối chiếu).
-        - 'prompt': Nội dung câu hỏi/yêu cầu.`,
+        - title: Tiêu đề đề thi.
+        - questions: Mảng các đối tượng { type: 'mcq'|'essay', prompt, options (chỉ mcq), correctAnswerIndex (chỉ mcq, 0-3), sampleAnswer (chỉ essay) }.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -70,9 +67,6 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   }
 };
 
-/**
- * Hàm mới: Sử dụng AI để chấm điểm phần tự luận của học sinh dựa trên đáp án mẫu
- */
 export const gradeEssayWithAI = async (prompt: string, studentAnswer: string, sampleAnswer: string): Promise<number> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   try {
@@ -80,14 +74,14 @@ export const gradeEssayWithAI = async (prompt: string, studentAnswer: string, sa
       model: "gemini-3-flash-preview",
       contents: `Câu hỏi: ${prompt}\nĐáp án mẫu: ${sampleAnswer}\nBài làm của học sinh: ${studentAnswer}`,
       config: {
-        systemInstruction: `Bạn là giáo viên chấm thi tiếng Anh. Hãy chấm điểm bài làm của học sinh dựa trên đáp án mẫu.
-        - Trả về 1 nếu bài làm đúng ý, ngữ pháp chấp nhận được.
-        - Trả về 0.5 nếu đúng một phần hoặc có lỗi ngữ pháp nhỏ.
-        - Trả về 0 nếu sai hoàn toàn hoặc để trống.
-        Chỉ trả về một con số duy nhất (0, 0.5 hoặc 1).`,
+        systemInstruction: `Bạn là giáo viên chấm thi tiếng Anh. Hãy chấm điểm bài làm của học sinh (thang điểm 1).
+        - Trả về 1 nếu đúng hoàn toàn.
+        - Trả về 0.5 nếu đúng ý nhưng sai ngữ pháp nhẹ.
+        - Trả về 0 nếu sai hoặc để trống.
+        CHỈ TRẢ VỀ CON SỐ (0, 0.5, hoặc 1). KHÔNG GIẢI THÍCH THÊM.`,
       }
     });
-    const score = parseFloat(response.text || "0");
+    const score = parseFloat(response.text?.trim() || "0");
     return isNaN(score) ? 0 : score;
   } catch (e) {
     return 0;

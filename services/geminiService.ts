@@ -8,32 +8,31 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Phân tích văn bản đề thi tiếng Anh sau và chuyển sang JSON.\n\nVĂN BẢN ĐỀ THI:\n${text}`,
+      contents: `Phân tích văn bản đề thi và bóc tách sang JSON.\n\nVĂN BẢN:\n${text}`,
       config: {
-        systemInstruction: `Bạn là chuyên gia số hóa đề thi. 
-        NHIỆM VỤ QUAN TRỌNG NHẤT: Xác định đúng đáp án trắc nghiệm (correctAnswerIndex).
+        systemInstruction: `Bạn là một chuyên gia số hóa đề thi. 
+        NHIỆM VỤ QUAN TRỌNG NHẤT: Xác định đúng 'correctAnswerIndex'.
         
-        QUY TẮC BÓC TÁCH ĐÁP ÁN:
-        1. Tìm dấu hiệu trực tiếp: Đáp án có dấu *, có chữ in đậm, gạch chân hoặc được khoanh tròn (A, B, C, D).
-        2. Tìm bảng đáp án: Nếu cuối văn bản có "Answer Key" hoặc "Bảng đáp án", hãy đối chiếu mã câu hỏi.
-        3. TỰ GIẢI (BẮT BUỘC): Nếu không có dấu hiệu, bạn PHẢI TỰ GIẢI câu hỏi đó. 
-        4. KHÔNG ĐƯỢC MẶC ĐỊNH CHỌN A (index 0). Nếu bạn không chắc chắn, hãy phân tích ngữ pháp/từ vựng để tìm đáp án đúng nhất.
-        5. 'correctAnswerIndex' phải là số nguyên từ 0 đến 3 (0=A, 1=B, 2=C, 3=D).
+        QUY TẮC BÓC TÁCH:
+        1. Tìm dấu hiệu: In đậm, gạch chân, dấu (*), hoặc bảng đáp án ở cuối đề.
+        2. TỰ GIẢI: Nếu không thấy dấu hiệu, bạn BẮT BUỘC phải tự giải câu hỏi để tìm đáp án đúng.
+        3. TUYỆT ĐỐI không mặc định chọn A. 
+        4. 'correctAnswerIndex' PHẢI là số (0=A, 1=B, 2=C, 3=D).
 
         Cấu trúc JSON:
         {
-          "title": "Tiêu đề đề thi",
+          "title": "Tên đề thi",
           "questions": [
             {
               "type": "mcq",
-              "prompt": "Nội dung câu hỏi",
-              "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
-              "correctAnswerIndex": 0-3
+              "prompt": "Câu hỏi...",
+              "options": ["A...", "B...", "C...", "D..."],
+              "correctAnswerIndex": 0
             },
             {
               "type": "essay",
-              "prompt": "Nội dung câu hỏi",
-              "sampleAnswer": "Đáp án mẫu hoàn chỉnh nhất"
+              "prompt": "Câu hỏi...",
+              "sampleAnswer": "Đáp án mẫu..."
             }
           ]
         }`,
@@ -71,13 +70,12 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
       title: result.title || "Đề thi mới",
       questions: (result.questions || []).map((q: any, idx: number) => ({
         ...q,
-        // Đảm bảo correctAnswerIndex luôn là number
-        correctAnswerIndex: typeof q.correctAnswerIndex === 'number' ? q.correctAnswerIndex : 0,
+        correctAnswerIndex: (q.type === 'mcq' && typeof q.correctAnswerIndex !== 'number') ? 0 : q.correctAnswerIndex,
         id: `q-${idx}-${Date.now()}`
       }))
     };
   } catch (error: any) {
-    throw new Error(`Lỗi AI: ${error.message}`);
+    throw new Error(`AI lỗi: ${error.message}`);
   }
 };
 
@@ -88,14 +86,7 @@ export const gradeEssayWithAI = async (prompt: string, studentAnswer: string, sa
       model: "gemini-3-flash-preview",
       contents: `Câu hỏi: ${prompt}\nĐáp án chuẩn: ${sampleAnswer}\nBài làm: ${studentAnswer}`,
       config: {
-        systemInstruction: `Bạn là giáo viên chấm thi tiếng Anh cực kỳ chính xác.
-        Hãy chấm bài làm của học sinh trên thang điểm 1.0 dựa trên đáp án chuẩn.
-        - Đúng hoàn toàn: 1.0
-        - Đúng nghĩa nhưng sai lỗi vặt (viết hoa, dấu câu): 0.9
-        - Đúng nghĩa nhưng sai ngữ pháp nhẹ: 0.7
-        - Đúng 50% ý: 0.5
-        - Sai hoàn toàn hoặc không làm: 0.0
-        TRẢ VỀ CHỈ DUY NHẤT CON SỐ (ví dụ: 0.7).`,
+        systemInstruction: `Chấm điểm tiếng Anh thang điểm 1.0. Trả về duy nhất con số (ví dụ 0.8).`,
       }
     });
     const score = parseFloat(response.text?.trim() || "0");

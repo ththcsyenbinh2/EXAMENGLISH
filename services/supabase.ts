@@ -1,24 +1,12 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Dùng cơ chế fallback an toàn để tránh lỗi ReferenceError: process is not defined
-const getEnv = (key: string): string => {
-  try {
-    // Thử lấy từ process.env (Vercel inject khi build)
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-      return process.env[key] as string;
-    }
-  } catch (e) {}
-  
-  // @ts-ignore
-  return window[key] || ''; 
-};
+// Truy cập trực tiếp để trình đóng gói (bundler) có thể thay thế giá trị
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
-const SUPABASE_URL = getEnv('SUPABASE_URL');
-const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
-
-if (!SUPABASE_URL || SUPABASE_URL.includes('placeholder')) {
-  console.error("CRITICAL: SUPABASE_URL is missing! Kiểm tra lại Environment Variables trên Vercel.");
+if (!SUPABASE_URL || SUPABASE_URL === 'https://your-project.supabase.co') {
+  console.warn("Supabase URL is missing or default. Please ensure Environment Variables are set in Vercel.");
 }
 
 export const supabase = createClient(

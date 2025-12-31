@@ -2,24 +2,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
-const getEnv = (key: string): string => {
-  try {
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-      return process.env[key] as string;
-    }
-  } catch (e) {}
-  return '';
-};
-
-const API_KEY = getEnv('API_KEY');
-
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  if (!API_KEY) {
-    throw new Error("Chưa cấu hình Gemini API Key (API_KEY) trên Vercel. Vui lòng vào Settings -> Environment Variables để thêm.");
+  // Khởi tạo instance mới ngay tại thời điểm gọi để đảm bảo lấy đúng API Key
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  if (!process.env.API_KEY) {
+    throw new Error("Chưa cấu hình Gemini API Key (API_KEY) trên Vercel.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
-  
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
     contents: `Hãy trích xuất các câu hỏi trắc nghiệm tiếng Anh từ văn bản sau. 
@@ -51,8 +41,8 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
                 correctAnswerIndex: { type: Type.INTEGER }
               },
               required: ["id", "prompt", "options", "correctAnswerIndex"]
-            }
-          }
+                },
+          },
         },
         required: ["title", "questions"]
       }

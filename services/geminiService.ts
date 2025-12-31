@@ -8,38 +8,32 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Dưới đây là nội dung văn bản bóc tách từ file đề thi Word. Hãy phân tích và chuyển nó sang định dạng JSON.\n\nNỘI DUNG VĂN BẢN:\n${text}`,
+      contents: `Phân tích văn bản đề thi tiếng Anh sau và chuyển sang JSON.\n\nVĂN BẢN ĐỀ THI:\n${text}`,
       config: {
-        systemInstruction: `Bạn là một chuyên gia khảo thí và bóc tách dữ liệu đề thi tiếng Anh chuyên nghiệp.
+        systemInstruction: `Bạn là chuyên gia số hóa đề thi. 
+        NHIỆM VỤ QUAN TRỌNG NHẤT: Xác định đúng đáp án trắc nghiệm (correctAnswerIndex).
         
-        NHIỆM VỤ:
-        1. Xác định tiêu đề đề thi.
-        2. Bóc tách từng câu hỏi (Trắc nghiệm MCQ hoặc Tự luận Essay).
-        
-        QUY TẮC VỀ ĐÁP ÁN TRẮC NGHIỆM (QUAN TRỌNG):
-        - TUYỆT ĐỐI KHÔNG mặc định chọn đáp án A (index 0).
-        - Tìm các dấu hiệu đáp án đúng: Chữ cái được khoanh tròn, in đậm (bold), gạch chân (underline), hoặc có dấu hiệu (*), (x) bên cạnh.
-        - Nếu văn bản có phần "ANSWER KEY" hoặc "BẢNG ĐÁP ÁN" ở cuối, hãy đối chiếu mã câu hỏi để lấy đáp án chính xác.
-        - Nếu KHÔNG CÓ bất kỳ dấu hiệu nào, bạn phải TỰ GIẢI câu hỏi đó dựa trên kiến thức tiếng Anh để chọn ra đáp án đúng nhất (A, B, C hoặc D) và gán vào 'correctAnswerIndex'.
+        QUY TẮC BÓC TÁCH ĐÁP ÁN:
+        1. Tìm dấu hiệu trực tiếp: Đáp án có dấu *, có chữ in đậm, gạch chân hoặc được khoanh tròn (A, B, C, D).
+        2. Tìm bảng đáp án: Nếu cuối văn bản có "Answer Key" hoặc "Bảng đáp án", hãy đối chiếu mã câu hỏi.
+        3. TỰ GIẢI (BẮT BUỘC): Nếu không có dấu hiệu, bạn PHẢI TỰ GIẢI câu hỏi đó. 
+        4. KHÔNG ĐƯỢC MẶC ĐỊNH CHỌN A (index 0). Nếu bạn không chắc chắn, hãy phân tích ngữ pháp/từ vựng để tìm đáp án đúng nhất.
+        5. 'correctAnswerIndex' phải là số nguyên từ 0 đến 3 (0=A, 1=B, 2=C, 3=D).
 
-        QUY TẮC TỰ LUẬN:
-        - Với các câu viết lại, điền từ, trả lời câu hỏi... hãy gán type là 'essay'.
-        - Luôn tạo 'sampleAnswer' là đáp án mẫu lý tưởng nhất.
-
-        CẤU TRÚC JSON YÊU CẦU:
+        Cấu trúc JSON:
         {
-          "title": "Tên đề thi",
+          "title": "Tiêu đề đề thi",
           "questions": [
             {
               "type": "mcq",
               "prompt": "Nội dung câu hỏi",
-              "options": ["A...", "B...", "C...", "D..."],
+              "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
               "correctAnswerIndex": 0-3
             },
             {
               "type": "essay",
               "prompt": "Nội dung câu hỏi",
-              "sampleAnswer": "Đáp án mẫu"
+              "sampleAnswer": "Đáp án mẫu hoàn chỉnh nhất"
             }
           ]
         }`,
@@ -77,11 +71,13 @@ export const extractQuestionsFromText = async (text: string): Promise<{ title: s
       title: result.title || "Đề thi mới",
       questions: (result.questions || []).map((q: any, idx: number) => ({
         ...q,
+        // Đảm bảo correctAnswerIndex luôn là number
+        correctAnswerIndex: typeof q.correctAnswerIndex === 'number' ? q.correctAnswerIndex : 0,
         id: `q-${idx}-${Date.now()}`
       }))
     };
   } catch (error: any) {
-    throw new Error(`AI bóc tách thất bại: ${error.message}`);
+    throw new Error(`Lỗi AI: ${error.message}`);
   }
 };
 
@@ -90,19 +86,19 @@ export const gradeEssayWithAI = async (prompt: string, studentAnswer: string, sa
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Câu hỏi: ${prompt}\nĐáp án chuẩn: ${sampleAnswer}\nBài làm của học sinh: ${studentAnswer}`,
+      contents: `Câu hỏi: ${prompt}\nĐáp án chuẩn: ${sampleAnswer}\nBài làm: ${studentAnswer}`,
       config: {
-        systemInstruction: `Bạn là giáo viên tiếng Anh bản ngữ. Hãy chấm điểm bài làm của học sinh một cách công bằng trên thang điểm 1.0.
-        - 1.0 điểm: Đúng hoàn toàn về nghĩa, ngữ pháp và chính tả.
-        - 0.8 điểm: Đúng về nghĩa, nhưng có lỗi nhỏ về dấu câu hoặc viết hoa.
-        - 0.5 điểm: Đúng ý chính nhưng sai ngữ pháp (chia thì, số ít/nhiều).
-        - 0.2 điểm: Chỉ đúng được một vài từ khóa quan trọng.
-        - 0 điểm: Sai hoàn toàn hoặc để trống.
-        CHỈ TRẢ VỀ DUY NHẤT CON SỐ ĐIỂM (Ví dụ: 0.8). KHÔNG GIẢI THÍCH.`,
+        systemInstruction: `Bạn là giáo viên chấm thi tiếng Anh cực kỳ chính xác.
+        Hãy chấm bài làm của học sinh trên thang điểm 1.0 dựa trên đáp án chuẩn.
+        - Đúng hoàn toàn: 1.0
+        - Đúng nghĩa nhưng sai lỗi vặt (viết hoa, dấu câu): 0.9
+        - Đúng nghĩa nhưng sai ngữ pháp nhẹ: 0.7
+        - Đúng 50% ý: 0.5
+        - Sai hoàn toàn hoặc không làm: 0.0
+        TRẢ VỀ CHỈ DUY NHẤT CON SỐ (ví dụ: 0.7).`,
       }
     });
-    const scoreText = response.text?.trim() || "0";
-    const score = parseFloat(scoreText);
+    const score = parseFloat(response.text?.trim() || "0");
     return isNaN(score) ? 0 : Math.min(1, Math.max(0, score));
   } catch (e) {
     return 0;

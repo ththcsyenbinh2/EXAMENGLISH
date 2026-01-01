@@ -90,25 +90,34 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (!file) return;
   
   setIsProcessing(true);
-  setLoadingStep('AI đang bóc tách nội dung Word...');
+  setLoadingStep('Đang đọc file Word...');
   
   try {
+    // Bước 1: Đọc file
     const arrayBuffer = await file.arrayBuffer();
+    setLoadingStep('Đang chuyển đổi định dạng...');
     
-    // ✅ QUAN TRỌNG: Dùng convertToHtml thay vì extractRawText để giữ format
+    // Bước 2: Extract với format
     const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
-    
-    // Chuyển HTML → Text có đánh dấu (bold = **text**, italic = *text*)
     const textWithMarkup = htmlToMarkdown(result.value);
     
-    console.log('📄 Văn bản đã extract (có đánh dấu format):', textWithMarkup);
+    console.log('📄 Văn bản đã extract:', textWithMarkup.substring(0, 500) + '...');
+    console.log(`📊 Độ dài: ${textWithMarkup.length} ký tự`);
     
+    // Bước 3: Gửi đến AI
+    setLoadingStep('AI đang phân tích đề thi (có thể mất 10-30s)...');
     const extracted = await extractQuestionsFromText(textWithMarkup);
+    
+    console.log(`✅ Đã bóc tách ${extracted.questions.length} câu hỏi`);
+    
+    if (extracted.questions.length === 0) {
+      throw new Error('AI không tìm thấy câu hỏi nào trong file. Kiểm tra định dạng file Word.');
+    }
     
     setCurrentExam({ 
       id: crypto.randomUUID(), 
@@ -121,32 +130,47 @@ const App: React.FC = () => {
     
     setMode(AppMode.EXAM_SETUP);
   } catch (error: any) { 
-    alert(error.message); 
+    console.error('❌ Lỗi upload:', error);
+    alert(`Lỗi: ${error.message}`); 
   } finally { 
     setIsProcessing(false); 
   }
 };
 
-  // ✅ THÊM HÀM HELPER: Chuyển HTML → Markdown (giữ format)
+ // ✅ HÀM HELPER: Chuyển HTML → Markdown
 const htmlToMarkdown = (html: string): string => {
   let text = html;
   
-  // Giữ in đậm: <strong>text</strong> → **text**
+  // Giữ xuống dòng
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/p>/gi, '\n\n');
+  text = text.replace(/<\/div>/gi, '\n');
+  
+  // Giữ in đậm: <strong> hoặc <b> → **text**
   text = text.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
   text = text.replace(/<b>(.*?)<\/b>/gi, '**$1**');
   
-  // Giữ in nghiêng: <em>text</em> → *text*
+  // Giữ in nghiêng: <em> hoặc <i> → *text*
   text = text.replace(/<em>(.*?)<\/em>/gi, '*$1*');
   text = text.replace(/<i>(.*?)<\/i>/gi, '*$1*');
   
-  // Giữ gạch chân: <u>text</u> → __text__
+  // Giữ gạch chân: <u> → __text__
   text = text.replace(/<u>(.*?)<\/u>/gi, '__$1__');
   
   // Xóa các thẻ HTML khác
   text = text.replace(/<\/?[^>]+(>|$)/g, '');
   
-  // Xóa khoảng trắng thừa
-  text = text.replace(/\s+/g, ' ').trim();
+  // Decode HTML entities
+  text = text.replace(/&nbsp;/g, ' ');
+  text = text.replace(/&amp;/g, '&');
+  text = text.replace(/&lt;/g, '<');
+  text = text.replace(/&gt;/g, '>');
+  text = text.replace(/&quot;/g, '"');
+  
+  // Xóa khoảng trắng thừa nhưng giữ xuống dòng
+  text = text.replace(/ +/g, ' ');
+  text = text.replace(/\n\n\n+/g, '\n\n');
+  text = text.trim();
   
   return text;
 };

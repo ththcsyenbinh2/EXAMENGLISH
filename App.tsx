@@ -91,19 +91,65 @@ const App: React.FC = () => {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsProcessing(true);
-    setLoadingStep('AI đang bóc tách nội dung Word...');
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
-      const extracted = await extractQuestionsFromText(result.value);
-      setCurrentExam({ id: crypto.randomUUID(), exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(), title: extracted.title, questions: extracted.questions, is_open: true, created_at: new Date().toISOString() });
-      setMode(AppMode.EXAM_SETUP);
-    } catch (error: any) { alert(error.message); }
-    finally { setIsProcessing(false); }
-  };
+  const file = e.target.files?.[0];
+  if (!file) return;
+  
+  setIsProcessing(true);
+  setLoadingStep('AI đang bóc tách nội dung Word...');
+  
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    
+    // ✅ QUAN TRỌNG: Dùng convertToHtml thay vì extractRawText để giữ format
+    const result = await (window as any).mammoth.convertToHtml({ arrayBuffer });
+    
+    // Chuyển HTML → Text có đánh dấu (bold = **text**, italic = *text*)
+    const textWithMarkup = htmlToMarkdown(result.value);
+    
+    console.log('📄 Văn bản đã extract (có đánh dấu format):', textWithMarkup);
+    
+    const extracted = await extractQuestionsFromText(textWithMarkup);
+    
+    setCurrentExam({ 
+      id: crypto.randomUUID(), 
+      exam_code: Math.random().toString(36).substring(2, 8).toUpperCase(), 
+      title: extracted.title, 
+      questions: extracted.questions, 
+      is_open: true, 
+      created_at: new Date().toISOString() 
+    });
+    
+    setMode(AppMode.EXAM_SETUP);
+  } catch (error: any) { 
+    alert(error.message); 
+  } finally { 
+    setIsProcessing(false); 
+  }
+};
+
+  // ✅ THÊM HÀM HELPER: Chuyển HTML → Markdown (giữ format)
+const htmlToMarkdown = (html: string): string => {
+  let text = html;
+  
+  // Giữ in đậm: <strong>text</strong> → **text**
+  text = text.replace(/<strong>(.*?)<\/strong>/gi, '**$1**');
+  text = text.replace(/<b>(.*?)<\/b>/gi, '**$1**');
+  
+  // Giữ in nghiêng: <em>text</em> → *text*
+  text = text.replace(/<em>(.*?)<\/em>/gi, '*$1*');
+  text = text.replace(/<i>(.*?)<\/i>/gi, '*$1*');
+  
+  // Giữ gạch chân: <u>text</u> → __text__
+  text = text.replace(/<u>(.*?)<\/u>/gi, '__$1__');
+  
+  // Xóa các thẻ HTML khác
+  text = text.replace(/<\/?[^>]+(>|$)/g, '');
+  
+  // Xóa khoảng trắng thừa
+  text = text.replace(/\s+/g, ' ').trim();
+  
+  return text;
+};
 
   const deleteExam = async (id: string) => {
     if(!confirm("Xóa đề này và tất cả kết quả học sinh?")) return;

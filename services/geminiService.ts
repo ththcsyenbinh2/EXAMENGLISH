@@ -1,8 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
+// ✅ FIX: Dùng import.meta.env cho Vite
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+
 export const extractQuestionsFromText = async (text: string): Promise<{ title: string; questions: Question[] }> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  if (!GEMINI_API_KEY) {
+    throw new Error("Thiếu VITE_GEMINI_API_KEY trong file .env");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   
   try {
     const response = await ai.models.generateContent({
@@ -66,13 +73,12 @@ CẤU TRÚC JSON:
       
       // Đảm bảo correctAnswerIndex là số hợp lệ cho MCQ
       if (q.type === 'mcq') {
-        // Nếu AI trả về undefined/null hoặc số không hợp lệ, mặc định = 0 (nhưng log cảnh báo)
         if (q.correctAnswerIndex === undefined || q.correctAnswerIndex === null || 
             typeof q.correctAnswerIndex !== 'number' || q.correctAnswerIndex < 0 || q.correctAnswerIndex > 3) {
           console.warn(`⚠️ Câu ${idx+1} không có correctAnswerIndex hợp lệ. AI đã trả về: ${q.correctAnswerIndex}. Mặc định = 0.`);
           validated.correctAnswerIndex = 0;
         } else {
-          validated.correctAnswerIndex = Math.floor(q.correctAnswerIndex); // Đảm bảo là số nguyên
+          validated.correctAnswerIndex = Math.floor(q.correctAnswerIndex);
         }
       }
       
@@ -84,13 +90,17 @@ CẤU TRÚC JSON:
       questions: validatedQuestions
     };
   } catch (error: any) {
-    // ✅ ĐÃ SỬA: Thay Error`...` thành Error(`...`)
     throw new Error(`AI không thể bóc tách đề: ${error.message}`);
   }
 };
 
 export const gradeEssayWithAI = async (prompt: string, studentAnswer: string, sampleAnswer: string): Promise<number> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  if (!GEMINI_API_KEY) {
+    console.error("Thiếu API key, trả về điểm 0");
+    return 0;
+  }
+
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   
   try {
     const response = await ai.models.generateContent({
@@ -106,7 +116,7 @@ CHỈ TRẢ VỀ CON SỐ (0, 0.5, hoặc 1). KHÔNG GIẢI THÍCH THÊM.`,
     });
     
     const score = parseFloat(response.text?.trim() || "0");
-    return isNaN(score) ? 0 : Math.max(0, Math.min(1, score)); // Giới hạn 0-1
+    return isNaN(score) ? 0 : Math.max(0, Math.min(1, score));
   } catch (e) {
     console.error("Lỗi chấm essay:", e);
     return 0;
